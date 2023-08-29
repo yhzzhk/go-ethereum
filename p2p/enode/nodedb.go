@@ -77,6 +77,8 @@ type DB struct {
 
 // OpenDB opens a node database for storing and retrieving infos about known peers in the
 // network. If no path is given an in-memory, temporary database is constructed.
+// 用于打开一个节点数据库。它接受一个字符串类型的 path 参数，表示数据库的路径。
+// 如果没有提供路径，那么将创建一个基于内存的临时数据库。
 func OpenDB(path string) (*DB, error) {
 	if path == "" {
 		return newMemoryDB()
@@ -85,6 +87,7 @@ func OpenDB(path string) (*DB, error) {
 }
 
 // newMemoryNodeDB creates a new in-memory node database without a persistent backend.
+// 用于创建一个基于内存的节点数据库，即没有持久化的后端存储。它使用 LevelDB（leveldb）作为数据库引擎，并将其存储在内存中。
 func newMemoryDB() (*DB, error) {
 	db, err := leveldb.Open(storage.NewMemStorage(), nil)
 	if err != nil {
@@ -95,6 +98,10 @@ func newMemoryDB() (*DB, error) {
 
 // newPersistentNodeDB creates/opens a leveldb backed persistent node database,
 // also flushing its contents in case of a version mismatch.
+// 用于创建或打开一个基于持久化的节点数据库，即使用 LevelDB 作为后端存储，并将其存储在磁盘上。
+// 它接受一个 path 参数，指定数据库的路径。如果指定的路径上的数据库文件已经存在，它将尝试打开它。
+// 如果数据库文件不存在或发生错误，它会创建一个新的数据库文件。在打开数据库之后，它会检查数据库的版本信息。
+// 如果版本不匹配，它会刷新数据库并重新打开它。
 func newPersistentDB(path string) (*DB, error) {
 	opts := &opt.Options{OpenFilesCacheCapacity: 5}
 	db, err := leveldb.OpenFile(path, opts)

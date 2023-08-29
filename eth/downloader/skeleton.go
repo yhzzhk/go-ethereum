@@ -102,7 +102,6 @@ type subchain struct {
 // suspended skeleton sync without prior knowledge of all prior suspension points.
 type skeletonProgress struct {
 	Subchains []*subchain // Disjoint subchains downloaded until now
-	Finalized *uint64     // Last known finalized block number
 }
 
 // headUpdate is a notification that the beacon sync should switch to a new target.
@@ -110,7 +109,6 @@ type skeletonProgress struct {
 // extend it and fail if it's not possible.
 type headUpdate struct {
 	header *types.Header // Header to update the sync target to
-	final  *types.Header // Finalized header to use as thresholds
 	force  bool          // Whether to force the update or only extend if possible
 	errc   chan error    // Channel to signal acceptance of the new head
 }
@@ -323,12 +321,12 @@ func (s *skeleton) Terminate() error {
 //
 // This method does not block, rather it just waits until the syncer receives the
 // fed header. What the syncer does with it is the syncer's problem.
-func (s *skeleton) Sync(head *types.Header, final *types.Header, force bool) error {
+func (s *skeleton) Sync(head *types.Header, force bool) error {
 	log.Trace("New skeleton head announced", "number", head.Number, "hash", head.Hash(), "force", force)
 	errc := make(chan error)
 
 	select {
-	case s.headEvents <- &headUpdate{header: head, final: final, force: force, errc: errc}:
+	case s.headEvents <- &headUpdate{header: head, force: force, errc: errc}:
 		return <-errc
 	case <-s.terminated:
 		return errTerminated
@@ -367,31 +365,13 @@ func (s *skeleton) sync(head *types.Header) (*types.Header, error) {
 		s.filler.resume()
 	}
 	defer func() {
-		// The filler needs to be suspended, but since it can block for a while
-		// when there are many blocks queued up for full-sync importing, run it
-		// on a separate goroutine and consume head messages that need instant
-		// replies.
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			if filled := s.filler.suspend(); filled != nil {
-				// If something was filled, try to delete stale sync helpers. If
-				// unsuccessful, warn the user, but not much else we can do (it's
-				// a programming error, just let users report an issue and don't
-				// choke in the meantime).
-				if err := s.cleanStales(filled); err != nil {
-					log.Error("Failed to clean stale beacon headers", "err", err)
-				}
-			}
-		}()
-		// Wait for the suspend to finish, consuming head events in the meantime
-		// and dropping them on the floor.
-		for {
-			select {
-			case <-done:
-				return
-			case event := <-s.headEvents:
-				event.errc <- errors.New("beacon syncer reorging")
+		if filled := s.filler.suspend(); filled != nil {
+			// If something was filled, try to delete stale sync helpers. If
+			// unsuccessful, warn the user, but not much else we can do (it's
+			// a programming error, just let users report an issue and don't
+			// choke in the meantime).
+			if err := s.cleanStales(filled); err != nil {
+				log.Error("Failed to clean stale beacon headers", "err", err)
 			}
 		}
 	}()
@@ -457,7 +437,7 @@ func (s *skeleton) sync(head *types.Header) (*types.Header, error) {
 			// we don't seamlessly integrate reorgs to keep things simple. If the
 			// network starts doing many mini reorgs, it might be worthwhile handling
 			// a limited depth without an error.
-			if reorged := s.processNewHead(event.header, event.final, event.force); reorged {
+			if reorged := s.processNewHead(event.header, event.force); reorged {
 				// If a reorg is needed, and we're forcing the new head, signal
 				// the syncer to tear down and start over. Otherwise, drop the
 				// non-force reorg.
@@ -610,17 +590,7 @@ func (s *skeleton) saveSyncStatus(db ethdb.KeyValueWriter) {
 // accepts and integrates it into the skeleton or requests a reorg. Upon reorg,
 // the syncer will tear itself down and restart with a fresh head. It is simpler
 // to reconstruct the sync state than to mutate it and hope for the best.
-func (s *skeleton) processNewHead(head *types.Header, final *types.Header, force bool) bool {
-	// If a new finalized block was announced, update the sync process independent
-	// of what happens with the sync head below
-	if final != nil {
-		if number := final.Number.Uint64(); s.progress.Finalized == nil || *s.progress.Finalized != number {
-			s.progress.Finalized = new(uint64)
-			*s.progress.Finalized = final.Number.Uint64()
-
-			s.saveSyncStatus(s.db)
-		}
-	}
+func (s *skeleton) processNewHead(head *types.Header, force bool) bool {
 	// If the header cannot be inserted without interruption, return an error for
 	// the outer loop to tear down the skeleton sync and restart it
 	number := head.Number.Uint64()
@@ -648,7 +618,7 @@ func (s *skeleton) processNewHead(head *types.Header, final *types.Header, force
 	}
 	if parent := rawdb.ReadSkeletonHeader(s.db, number-1); parent.Hash() != head.ParentHash {
 		if force {
-			log.Warn("Beacon chain forked", "ancestor", number-1, "hash", parent.Hash(), "want", head.ParentHash)
+			log.Warn("Beacon chain forked", "ancestor", parent.Number, "hash", parent.Hash(), "want", head.ParentHash)
 		}
 		return true
 	}
@@ -1180,10 +1150,9 @@ func (s *skeleton) cleanStales(filled *types.Header) error {
 	return nil
 }
 
-// Bounds retrieves the current head and tail tracked by the skeleton syncer
-// and optionally the last known finalized header if any was announced and if
-// it is still in the sync range. This method is used by the backfiller, whose
-// life cycle is controlled by the skeleton syncer.
+// Bounds retrieves the current head and tail tracked by the skeleton syncer.
+// This method is used by the backfiller, whose life cycle is controlled by the
+// skeleton syncer.
 //
 // Note, the method will not use the internal state of the skeleton, but will
 // rather blindly pull stuff from the database. This is fine, because the back-
@@ -1191,34 +1160,28 @@ func (s *skeleton) cleanStales(filled *types.Header) error {
 // There might be new heads appended, but those are atomic from the perspective
 // of this method. Any head reorg will first tear down the backfiller and only
 // then make the modification.
-func (s *skeleton) Bounds() (head *types.Header, tail *types.Header, final *types.Header, err error) {
+func (s *skeleton) Bounds() (head *types.Header, tail *types.Header, err error) {
 	// Read the current sync progress from disk and figure out the current head.
 	// Although there's a lot of error handling here, these are mostly as sanity
 	// checks to avoid crashing if a programming error happens. These should not
 	// happen in live code.
 	status := rawdb.ReadSkeletonSyncStatus(s.db)
 	if len(status) == 0 {
-		return nil, nil, nil, errors.New("beacon sync not yet started")
+		return nil, nil, errors.New("beacon sync not yet started")
 	}
 	progress := new(skeletonProgress)
 	if err := json.Unmarshal(status, progress); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	head = rawdb.ReadSkeletonHeader(s.db, progress.Subchains[0].Head)
 	if head == nil {
-		return nil, nil, nil, fmt.Errorf("head skeleton header %d is missing", progress.Subchains[0].Head)
+		return nil, nil, fmt.Errorf("head skeleton header %d is missing", progress.Subchains[0].Head)
 	}
 	tail = rawdb.ReadSkeletonHeader(s.db, progress.Subchains[0].Tail)
 	if tail == nil {
-		return nil, nil, nil, fmt.Errorf("tail skeleton header %d is missing", progress.Subchains[0].Tail)
+		return nil, nil, fmt.Errorf("tail skeleton header %d is missing", progress.Subchains[0].Tail)
 	}
-	if progress.Finalized != nil && tail.Number.Uint64() <= *progress.Finalized && *progress.Finalized <= head.Number.Uint64() {
-		final = rawdb.ReadSkeletonHeader(s.db, *progress.Finalized)
-		if final == nil {
-			return nil, nil, nil, fmt.Errorf("finalized skeleton header %d is missing", *progress.Finalized)
-		}
-	}
-	return head, tail, final, nil
+	return head, tail, nil
 }
 
 // Header retrieves a specific header tracked by the skeleton syncer. This method

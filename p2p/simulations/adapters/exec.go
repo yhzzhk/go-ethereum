@@ -428,11 +428,9 @@ func execP2PNode() {
 
 	// Send status to the host.
 	statusJSON, _ := json.Marshal(status)
-	resp, err := http.Post(statusURL, "application/json", bytes.NewReader(statusJSON))
-	if err != nil {
+	if _, err := http.Post(statusURL, "application/json", bytes.NewReader(statusJSON)); err != nil {
 		log.Crit("Can't post startup info", "url", statusURL, "err", err)
 	}
-	resp.Body.Close()
 	if stackErr != nil {
 		os.Exit(1)
 	}

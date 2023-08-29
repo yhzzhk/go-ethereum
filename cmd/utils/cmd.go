@@ -118,9 +118,6 @@ func StartNode(ctx *cli.Context, stack *node.Node, isConsole bool) {
 }
 
 func monitorFreeDiskSpace(sigc chan os.Signal, path string, freeDiskSpaceCritical uint64) {
-	if path == "" {
-		return
-	}
 	for {
 		freeSpace, err := getFreeDiskSpace(path)
 		if err != nil {
@@ -184,7 +181,7 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 	for batch := 0; ; batch++ {
 		// Load a batch of RLP blocks.
 		if checkInterrupt() {
-			return errors.New("interrupted")
+			return fmt.Errorf("interrupted")
 		}
 		i := 0
 		for ; i < importBatchSize; i++ {
@@ -207,21 +204,15 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 		}
 		// Import the batch.
 		if checkInterrupt() {
-			return errors.New("interrupted")
+			return fmt.Errorf("interrupted")
 		}
 		missing := missingBlocks(chain, blocks[:i])
 		if len(missing) == 0 {
 			log.Info("Skipping batch as all blocks present", "batch", batch, "first", blocks[0].Hash(), "last", blocks[i-1].Hash())
 			continue
 		}
-		if failindex, err := chain.InsertChain(missing); err != nil {
-			var failnumber uint64
-			if failindex > 0 && failindex < len(missing) {
-				failnumber = missing[failindex].NumberU64()
-			} else {
-				failnumber = missing[0].NumberU64()
-			}
-			return fmt.Errorf("invalid block %d: %v", failnumber, err)
+		if _, err := chain.InsertChain(missing); err != nil {
+			return fmt.Errorf("invalid block %d: %v", n, err)
 		}
 	}
 	return nil
@@ -231,7 +222,7 @@ func missingBlocks(chain *core.BlockChain, blocks []*types.Block) []*types.Block
 	head := chain.CurrentBlock()
 	for i, block := range blocks {
 		// If we're behind the chain head, only check block, state is available at head
-		if head.Number.Uint64() > block.NumberU64() {
+		if head.NumberU64() > block.NumberU64() {
 			if !chain.HasBlock(block.Hash(), block.NumberU64()) {
 				return blocks[i:]
 			}

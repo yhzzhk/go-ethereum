@@ -25,7 +25,6 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -144,9 +143,7 @@ func (st *StackTrie) unmarshalBinary(r io.Reader) error {
 		Val      []byte
 		Key      []byte
 	}
-	if err := gob.NewDecoder(r).Decode(&dec); err != nil {
-		return err
-	}
+	gob.NewDecoder(r).Decode(&dec)
 	st.owner = dec.Owner
 	st.nodeType = dec.NodeType
 	st.val = dec.Val
@@ -160,9 +157,7 @@ func (st *StackTrie) unmarshalBinary(r io.Reader) error {
 			continue
 		}
 		var child StackTrie
-		if err := child.unmarshalBinary(r); err != nil {
-			return err
-		}
+		child.unmarshalBinary(r)
 		st.children[i] = &child
 	}
 	return nil
@@ -202,8 +197,8 @@ const (
 	hashedNode
 )
 
-// Update inserts a (key, value) pair into the stack trie.
-func (st *StackTrie) Update(key, value []byte) error {
+// TryUpdate inserts a (key, value) pair into the stack trie
+func (st *StackTrie) TryUpdate(key, value []byte) error {
 	k := keybytesToHex(key)
 	if len(value) == 0 {
 		panic("deletion not supported")
@@ -212,10 +207,8 @@ func (st *StackTrie) Update(key, value []byte) error {
 	return nil
 }
 
-// MustUpdate is a wrapper of Update and will omit any encountered error but
-// just print out an error message.
-func (st *StackTrie) MustUpdate(key, value []byte) {
-	if err := st.Update(key, value); err != nil {
+func (st *StackTrie) Update(key, value []byte) {
+	if err := st.TryUpdate(key, value); err != nil {
 		log.Error("Unhandled trie error in StackTrie.Update", "err", err)
 	}
 }
@@ -414,23 +407,23 @@ func (st *StackTrie) hashRec(hasher *hasher, path []byte) {
 		return
 
 	case emptyNode:
-		st.val = types.EmptyRootHash.Bytes()
+		st.val = emptyRoot.Bytes()
 		st.key = st.key[:0]
 		st.nodeType = hashedNode
 		return
 
 	case branchNode:
-		var nodes fullNode
+		var nodes rawFullNode
 		for i, child := range st.children {
 			if child == nil {
-				nodes.Children[i] = nilValueNode
+				nodes[i] = nilValueNode
 				continue
 			}
 			child.hashRec(hasher, append(path, byte(i)))
 			if len(child.val) < 32 {
-				nodes.Children[i] = rawNode(child.val)
+				nodes[i] = rawNode(child.val)
 			} else {
-				nodes.Children[i] = hashNode(child.val)
+				nodes[i] = hashNode(child.val)
 			}
 
 			// Release child back to pool.
@@ -444,7 +437,7 @@ func (st *StackTrie) hashRec(hasher *hasher, path []byte) {
 	case extNode:
 		st.children[0].hashRec(hasher, append(path, st.key...))
 
-		n := shortNode{Key: hexToCompactInPlace(st.key)}
+		n := rawShortNode{Key: hexToCompact(st.key)}
 		if len(st.children[0].val) < 32 {
 			n.Val = rawNode(st.children[0].val)
 		} else {
@@ -460,7 +453,7 @@ func (st *StackTrie) hashRec(hasher *hasher, path []byte) {
 
 	case leafNode:
 		st.key = append(st.key, byte(16))
-		n := shortNode{Key: hexToCompactInPlace(st.key), Val: valueNode(st.val)}
+		n := rawShortNode{Key: hexToCompact(st.key), Val: valueNode(st.val)}
 
 		n.encode(hasher.encbuf)
 		encodedNode = hasher.encodedBytes()

@@ -4,9 +4,11 @@
 
 .PHONY: geth android ios evm all test clean
 
+export GOPATH = /home/yhz/workspace/go-ethereum/build/_workspace
 GOBIN = ./build/bin
 GO ?= latest
-GORUN = go run
+GORUN = env GO111MODULE=on go run
+
 
 geth:
 	$(GORUN) build/ci.go install ./cmd/geth
@@ -23,7 +25,7 @@ lint: ## Run linters.
 	$(GORUN) build/ci.go lint
 
 clean:
-	go clean -cache
+	env GO111MODULE=on go clean -cache
 	rm -fr build/_workspace/pkg/ $(GOBIN)/*
 
 # The devtools target installs tools required for 'go generate'.

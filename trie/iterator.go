@@ -22,7 +22,6 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // NodeResolver is used for looking up trie nodes before reaching into the real
@@ -161,7 +160,7 @@ func (e seekError) Error() string {
 }
 
 func newNodeIterator(trie *Trie, start []byte) NodeIterator {
-	if trie.Hash() == types.EmptyRootHash {
+	if trie.Hash() == emptyRoot {
 		return &nodeIterator{
 			trie: trie,
 			err:  errIteratorEnd,
@@ -303,7 +302,7 @@ func (it *nodeIterator) seek(prefix []byte) error {
 func (it *nodeIterator) init() (*nodeIteratorState, error) {
 	root := it.trie.Hash()
 	state := &nodeIteratorState{node: it.trie.root, index: -1}
-	if root != types.EmptyRootHash {
+	if root != emptyRoot {
 		state.hash = root
 	}
 	return state, state.resolve(it, nil)
@@ -387,14 +386,7 @@ func (it *nodeIterator) resolveHash(hash hashNode, path []byte) (node, error) {
 	// loaded blob will be tracked, while it's not required here since
 	// all loaded nodes won't be linked to trie at all and track nodes
 	// may lead to out-of-memory issue.
-	blob, err := it.trie.reader.node(path, common.BytesToHash(hash))
-	if err != nil {
-		return nil, err
-	}
-	// The raw-blob format nodes are loaded either from the
-	// clean cache or the database, they are all in their own
-	// copy and safe to use unsafe decoder.
-	return mustDecodeNodeUnsafe(hash, blob), nil
+	return it.trie.reader.node(path, common.BytesToHash(hash))
 }
 
 func (it *nodeIterator) resolveBlob(hash hashNode, path []byte) ([]byte, error) {
@@ -408,7 +400,7 @@ func (it *nodeIterator) resolveBlob(hash hashNode, path []byte) ([]byte, error) 
 	// loaded blob will be tracked, while it's not required here since
 	// all loaded nodes won't be linked to trie at all and track nodes
 	// may lead to out-of-memory issue.
-	return it.trie.reader.node(path, common.BytesToHash(hash))
+	return it.trie.reader.nodeBlob(path, common.BytesToHash(hash))
 }
 
 func (st *nodeIteratorState) resolve(it *nodeIterator, path []byte) error {

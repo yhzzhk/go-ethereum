@@ -167,6 +167,9 @@ func NewFairMix(timeout time.Duration) *FairMix {
 }
 
 // AddSource adds a source of nodes.
+// 这个 AddSource 方法用于向混合器中添加一个节点源，
+// 并在一个新的 goroutine 中运行这个节点源，以便获取节点并将其传递给混合器进行混合。
+// 这样，混合器可以同时从多个节点源获取节点，提高了节点发现的效率。
 func (m *FairMix) AddSource(it Iterator) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

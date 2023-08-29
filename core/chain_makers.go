@@ -23,8 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -86,11 +84,6 @@ func (b *BlockGen) SetDifficulty(diff *big.Int) {
 // SetPos makes the header a PoS-header (0 difficulty)
 func (b *BlockGen) SetPoS() {
 	b.header.Difficulty = new(big.Int)
-}
-
-// SetBlobGas sets the data gas used by the blob in the generated block.
-func (b *BlockGen) SetBlobGas(blobGasUsed uint64) {
-	b.header.BlobGasUsed = &blobGasUsed
 }
 
 // addTx adds a transaction to the generated block. If no coinbase has
@@ -163,11 +156,6 @@ func (b *BlockGen) Number() *big.Int {
 	return new(big.Int).Set(b.header.Number)
 }
 
-// Timestamp returns the timestamp of the block being generated.
-func (b *BlockGen) Timestamp() uint64 {
-	return b.header.Time
-}
-
 // BaseFee returns the EIP-1559 base fee of the block being generated.
 func (b *BlockGen) BaseFee() *big.Int {
 	return new(big.Int).Set(b.header.BaseFee)
@@ -209,7 +197,7 @@ func (b *BlockGen) AddUncle(h *types.Header) {
 	// The gas limit and price should be derived from the parent
 	h.GasLimit = parent.GasLimit
 	if b.config.IsLondon(h.Number) {
-		h.BaseFee = eip1559.CalcBaseFee(b.config, parent)
+		h.BaseFee = misc.CalcBaseFee(b.config, parent)
 		if !b.config.IsLondon(parent.Number) {
 			parentGasLimit := parent.GasLimit * b.config.ElasticityMultiplier()
 			h.GasLimit = CalcGasLimit(parentGasLimit, parentGasLimit)
@@ -219,31 +207,23 @@ func (b *BlockGen) AddUncle(h *types.Header) {
 }
 
 // AddWithdrawal adds a withdrawal to the generated block.
-// It returns the withdrawal index.
-func (b *BlockGen) AddWithdrawal(w *types.Withdrawal) uint64 {
-	cpy := *w
-	cpy.Index = b.nextWithdrawalIndex()
-	b.withdrawals = append(b.withdrawals, &cpy)
-	return cpy.Index
-}
-
-// nextWithdrawalIndex computes the index of the next withdrawal.
-func (b *BlockGen) nextWithdrawalIndex() uint64 {
-	if len(b.withdrawals) != 0 {
-		return b.withdrawals[len(b.withdrawals)-1].Index + 1
-	}
+func (b *BlockGen) AddWithdrawal(w *types.Withdrawal) {
+	// The withdrawal will be assigned the next valid index.
+	var idx uint64
 	for i := b.i - 1; i >= 0; i-- {
 		if wd := b.chain[i].Withdrawals(); len(wd) != 0 {
-			return wd[len(wd)-1].Index + 1
+			idx = wd[len(wd)-1].Index + 1
+			break
 		}
 		if i == 0 {
-			// Correctly set the index if no parent had withdrawals.
+			// Correctly set the index if no parent had withdrawals
 			if wd := b.parent.Withdrawals(); len(wd) != 0 {
-				return wd[len(wd)-1].Index + 1
+				idx = wd[len(wd)-1].Index + 1
 			}
 		}
 	}
-	return 0
+	w.Index = idx
+	b.withdrawals = append(b.withdrawals, w)
 }
 
 // PrevBlock returns a previously generated block by number. It panics if
@@ -289,7 +269,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 	}
 	blocks, receipts := make(types.Blocks, n), make([]types.Receipts, n)
 	chainreader := &fakeChainReader{config: config}
-	genblock := func(i int, parent *types.Block, triedb *trie.Database, statedb *state.StateDB) (*types.Block, types.Receipts) {
+	genblock := func(i int, parent *types.Block, statedb *state.StateDB) (*types.Block, types.Receipts) {
 		b := &BlockGen{i: i, chain: blocks, parent: parent, statedb: statedb, config: config, engine: engine}
 		b.header = makeHeader(chainreader, parent, statedb, b.engine)
 
@@ -328,27 +308,23 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			}
 
 			// Write state changes to db
-			root, err := statedb.Commit(b.header.Number.Uint64(), config.IsEIP158(b.header.Number))
+			root, err := statedb.Commit(config.IsEIP158(b.header.Number))
 			if err != nil {
 				panic(fmt.Sprintf("state write error: %v", err))
 			}
-			if err = triedb.Commit(root, false); err != nil {
+			if err := statedb.Database().TrieDB().Commit(root, false); err != nil {
 				panic(fmt.Sprintf("trie write error: %v", err))
 			}
 			return block, b.receipts
 		}
 		return nil, nil
 	}
-	// Forcibly use hash-based state scheme for retaining all nodes in disk.
-	triedb := trie.NewDatabase(db, trie.HashDefaults)
-	defer triedb.Close()
-
 	for i := 0; i < n; i++ {
-		statedb, err := state.New(parent.Root(), state.NewDatabaseWithNodeDB(db, triedb), nil)
+		statedb, err := state.New(parent.Root(), state.NewDatabase(db), nil)
 		if err != nil {
 			panic(err)
 		}
-		block, receipt := genblock(i, parent, triedb, statedb)
+		block, receipt := genblock(i, parent, statedb)
 		blocks[i] = block
 		receipts[i] = receipt
 		parent = block
@@ -361,9 +337,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 // then generate chain on top.
 func GenerateChainWithGenesis(genesis *Genesis, engine consensus.Engine, n int, gen func(int, *BlockGen)) (ethdb.Database, []*types.Block, []types.Receipts) {
 	db := rawdb.NewMemoryDatabase()
-	triedb := trie.NewDatabase(db, trie.HashDefaults)
-	defer triedb.Close()
-	_, err := genesis.Commit(db, triedb)
+	_, err := genesis.Commit(db, trie.NewDatabase(db))
 	if err != nil {
 		panic(err)
 	}
@@ -393,25 +367,11 @@ func makeHeader(chain consensus.ChainReader, parent *types.Block, state *state.S
 		Time:     time,
 	}
 	if chain.Config().IsLondon(header.Number) {
-		header.BaseFee = eip1559.CalcBaseFee(chain.Config(), parent.Header())
+		header.BaseFee = misc.CalcBaseFee(chain.Config(), parent.Header())
 		if !chain.Config().IsLondon(parent.Number()) {
 			parentGasLimit := parent.GasLimit() * chain.Config().ElasticityMultiplier()
 			header.GasLimit = CalcGasLimit(parentGasLimit, parentGasLimit)
 		}
-	}
-	if chain.Config().IsCancun(header.Number, header.Time) {
-		var (
-			parentExcessBlobGas uint64
-			parentBlobGasUsed   uint64
-		)
-		if parent.ExcessBlobGas() != nil {
-			parentExcessBlobGas = *parent.ExcessBlobGas()
-			parentBlobGasUsed = *parent.BlobGasUsed()
-		}
-		excessBlobGas := eip4844.CalcExcessBlobGas(parentExcessBlobGas, parentBlobGasUsed)
-		header.ExcessBlobGas = &excessBlobGas
-		header.BlobGasUsed = new(uint64)
-		header.ParentBeaconRoot = new(common.Hash)
 	}
 	return header
 }

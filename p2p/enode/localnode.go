@@ -204,6 +204,8 @@ func (ln *LocalNode) SetFallbackIP(ip net.IP) {
 
 // SetFallbackUDP sets the last-resort UDP-on-IPv4 port. This port is used
 // if no endpoint prediction can be made.
+// 用于设置节点的最后的备用 UDP-on-IPv4 端口，确保节点在没有其他端点预测可用时，可以使用这个备用端口。
+// 这对于节点在特定情况下进行端口处理和连接非常有用。
 func (ln *LocalNode) SetFallbackUDP(port int) {
 	ln.mu.Lock()
 	defer ln.mu.Unlock()

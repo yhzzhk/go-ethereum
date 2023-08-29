@@ -17,8 +17,6 @@
 package main
 
 import (
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -36,7 +34,6 @@ type crawler struct {
 
 	// settings
 	revalidateInterval time.Duration
-	mu                 sync.RWMutex
 }
 
 const (
@@ -70,7 +67,7 @@ func newCrawler(input nodeSet, disc resolver, iters ...enode.Iterator) *crawler 
 	return c
 }
 
-func (c *crawler) run(timeout time.Duration, nthreads int) nodeSet {
+func (c *crawler) run(timeout time.Duration) nodeSet {
 	var (
 		timeoutTimer = time.NewTimer(timeout)
 		timeoutCh    <-chan time.Time
@@ -78,51 +75,35 @@ func (c *crawler) run(timeout time.Duration, nthreads int) nodeSet {
 		doneCh       = make(chan enode.Iterator, len(c.iters))
 		liveIters    = len(c.iters)
 	)
-	if nthreads < 1 {
-		nthreads = 1
-	}
 	defer timeoutTimer.Stop()
 	defer statusTicker.Stop()
 	for _, it := range c.iters {
 		go c.runIterator(doneCh, it)
 	}
-	var (
-		added   atomic.Uint64
-		updated atomic.Uint64
-		skipped atomic.Uint64
-		recent  atomic.Uint64
-		removed atomic.Uint64
-		wg      sync.WaitGroup
-	)
-	wg.Add(nthreads)
-	for i := 0; i < nthreads; i++ {
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case n := <-c.ch:
-					switch c.updateNode(n) {
-					case nodeSkipIncompat:
-						skipped.Add(1)
-					case nodeSkipRecent:
-						recent.Add(1)
-					case nodeRemoved:
-						removed.Add(1)
-					case nodeAdded:
-						added.Add(1)
-					default:
-						updated.Add(1)
-					}
-				case <-c.closed:
-					return
-				}
-			}
-		}()
-	}
 
+	var (
+		added   int
+		updated int
+		skipped int
+		recent  int
+		removed int
+	)
 loop:
 	for {
 		select {
+		case n := <-c.ch:
+			switch c.updateNode(n) {
+			case nodeSkipIncompat:
+				skipped++
+			case nodeSkipRecent:
+				recent++
+			case nodeRemoved:
+				removed++
+			case nodeAdded:
+				added++
+			default:
+				updated++
+			}
 		case it := <-doneCh:
 			if it == c.inputIter {
 				// Enable timeout when we're done revalidating the input nodes.
@@ -138,11 +119,8 @@ loop:
 			break loop
 		case <-statusTicker.C:
 			log.Info("Crawling in progress",
-				"added", added.Load(),
-				"updated", updated.Load(),
-				"removed", removed.Load(),
-				"ignored(recent)", recent.Load(),
-				"ignored(incompatible)", skipped.Load())
+				"added", added, "updated", updated, "removed", removed,
+				"ignored(recent)", recent, "ignored(incompatible)", skipped)
 		}
 	}
 
@@ -153,7 +131,6 @@ loop:
 	for ; liveIters > 0; liveIters-- {
 		<-doneCh
 	}
-	wg.Wait()
 	return c.output
 }
 
@@ -171,9 +148,7 @@ func (c *crawler) runIterator(done chan<- enode.Iterator, it enode.Iterator) {
 // updateNode updates the info about the given node, and returns a status
 // about what changed
 func (c *crawler) updateNode(n *enode.Node) int {
-	c.mu.RLock()
 	node, ok := c.output[n.ID()]
-	c.mu.RUnlock()
 
 	// Skip validation of recently-seen nodes.
 	if ok && time.Since(node.LastCheck) < c.revalidateInterval {
@@ -181,9 +156,10 @@ func (c *crawler) updateNode(n *enode.Node) int {
 	}
 
 	// Request the node record.
-	status := nodeUpdated
+	nn, err := c.disc.RequestENR(n)
 	node.LastCheck = truncNow()
-	if nn, err := c.disc.RequestENR(n); err != nil {
+	status := nodeUpdated
+	if err != nil {
 		if node.Score == 0 {
 			// Node doesn't implement EIP-868.
 			log.Debug("Skipping node", "id", n.ID())
@@ -200,9 +176,8 @@ func (c *crawler) updateNode(n *enode.Node) int {
 		}
 		node.LastResponse = node.LastCheck
 	}
+
 	// Store/update node in output set.
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if node.Score <= 0 {
 		log.Debug("Removing node", "id", n.ID())
 		delete(c.output, n.ID())

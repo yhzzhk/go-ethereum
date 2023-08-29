@@ -19,14 +19,19 @@ package discover
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/neo4j"
 )
 
 // lookup performs a network search for nodes close to the given target. It approaches the
 // target by querying nodes that are closer to it on each iteration. The given target does
 // not need to be an actual node identifier.
+// 对接近给定目标的节点执行网络搜索。 它通过在每次迭代中查询更接近目标的节点来接近目标。
+// 给定的目标不需要是实际的节点标识符。
 type lookup struct {
 	tab         *Table
 	queryfunc   func(*node) ([]*node, error)
@@ -61,6 +66,7 @@ func newLookup(ctx context.Context, tab *Table, target enode.ID, q queryFunc) *l
 func (it *lookup) run() []*enode.Node {
 	for it.advance() {
 	}
+	// log.Info("---------------------------------------lookup.run()")
 	return unwrapNodes(it.result.entries)
 }
 
@@ -118,6 +124,7 @@ func (it *lookup) startQueries() bool {
 	}
 
 	// Ask the closest nodes that we haven't asked yet.
+	// 循环对最近的alpha个节点发送节点请求消息
 	for i := 0; i < len(it.result.entries) && it.queries < alpha; i++ {
 		n := it.result.entries[i]
 		if !it.asked[n.ID()] {
@@ -140,8 +147,12 @@ func (it *lookup) slowdown() {
 }
 
 func (it *lookup) query(n *node, reply chan<- []*node) {
+	//通过queryfunc字段对指定的节点n发送findnode请求，获取该节点返回的节点列表r。
 	fails := it.tab.db.FindFails(n.ID(), n.IP())
 	r, err := it.queryfunc(n)
+	//如果查询出现错误，则根据错误类型进行相应处理。
+	//如果是连接关闭错误errClosed，则不记录失败次数，并将空列表nil发送回通道reply，表示查询失败。
+	//否则，说明查询失败，将失败次数加1，并根据失败次数决定是否将节点从本地路由表中删除。
 	if errors.Is(err, errClosed) {
 		// Avoid recording failures on shutdown.
 		reply <- nil
@@ -162,8 +173,55 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		it.tab.db.UpdateFindFails(n.ID(), n.IP(), 0)
 	}
 
+	// 查询成功，将返回的节点列表及与对方节点的邻居关系加进neo4j数据库中
+	ctx := context.Background()
+	cn := neo4j.NewCQLConnection(ctx)
+	log.Info("---------------------开始导入neo4j数据库")
+
+	//判断目标节点是否在数据库中
+	exists, err := cn.IfNodeIn(ctx, n.ID().String())
+	if err != nil {
+		// 处理错误
+		log.Info("Error:", err)
+	}
+
+	//不在则创建新节点
+	if !exists {
+		log.Info("-------------不存在")
+		id := n.ID().String()
+		ip := n.IP().String()
+		rst, _ := cn.CreatNode(ctx, id, ip)
+		log.Info("创建目标节点", rst)
+	}
+
+	// 对每一个邻居节点判断是否在数据库中，在则直接添加关系，不在则创建节点后添加关系
+	// 同时记录每一个邻居节点与对方节点的距离（也就是邻居节点在对方路由表中的哪个bucket）
+	nid := n.ID()
+	for _, m := range r {
+		//计算距离
+		distance := enode.LogDist(nid, m.ID()) - 239
+		distancestr := strconv.Itoa(distance)
+
+		//写进数据库
+		id := m.ID().String()
+		ip := m.IP().String()
+		exists, err := cn.IfNodeIn(ctx, id)
+		if err != nil {
+			// 处理错误
+			log.Info("Error:", err)
+		}
+		if !exists {
+			rst, _ := cn.CreatNode(ctx, id, ip)
+			log.Info("创建邻居节点", rst)
+		}
+		rst, _ := cn.CreateEdge(ctx, n.ID().String(), id, distancestr)
+		// fmt.Printf("创建节点关系,距离为%d", distance)
+		log.Info("创建节点关系", rst)
+	}
+
 	// Grab as many nodes as possible. Some of them might not be alive anymore, but we'll
 	// just remove those again during revalidation.
+	//如果查询成功，将返回的节点列表中的节点添加到本地路由表中，并将这些节点发送回通道reply，表示查询成功。
 	for _, n := range r {
 		it.tab.addSeenNode(n)
 	}

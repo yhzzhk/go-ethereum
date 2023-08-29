@@ -56,7 +56,6 @@ var (
 	londonInstructionSet           = newLondonInstructionSet()
 	mergeInstructionSet            = newMergeInstructionSet()
 	shanghaiInstructionSet         = newShanghaiInstructionSet()
-	cancunInstructionSet           = newCancunInstructionSet()
 )
 
 // JumpTable contains the EVM opcodes supported at a given fork.
@@ -80,20 +79,10 @@ func validate(jt JumpTable) JumpTable {
 	return jt
 }
 
-func newCancunInstructionSet() JumpTable {
-	instructionSet := newShanghaiInstructionSet()
-	enable4844(&instructionSet) // EIP-4844 (DATAHASH opcode)
-	enable1153(&instructionSet) // EIP-1153 "Transient Storage"
-	enable5656(&instructionSet) // EIP-5656 (MCOPY opcode)
-	enable6780(&instructionSet) // EIP-6780 SELFDESTRUCT only in same transaction
-	return validate(instructionSet)
-}
-
 func newShanghaiInstructionSet() JumpTable {
 	instructionSet := newMergeInstructionSet()
 	enable3855(&instructionSet) // PUSH0 instruction
 	enable3860(&instructionSet) // Limit and meter initcode
-
 	return validate(instructionSet)
 }
 
@@ -109,7 +98,7 @@ func newMergeInstructionSet() JumpTable {
 }
 
 // newLondonInstructionSet returns the frontier, homestead, byzantium,
-// constantinople, istanbul, petersburg, berlin and london instructions.
+// contantinople, istanbul, petersburg, berlin and london instructions.
 func newLondonInstructionSet() JumpTable {
 	instructionSet := newBerlinInstructionSet()
 	enable3529(&instructionSet) // EIP-3529: Reduction in refunds https://eips.ethereum.org/EIPS/eip-3529
@@ -118,7 +107,7 @@ func newLondonInstructionSet() JumpTable {
 }
 
 // newBerlinInstructionSet returns the frontier, homestead, byzantium,
-// constantinople, istanbul, petersburg and berlin instructions.
+// contantinople, istanbul, petersburg and berlin instructions.
 func newBerlinInstructionSet() JumpTable {
 	instructionSet := newIstanbulInstructionSet()
 	enable2929(&instructionSet) // Access lists for trie accesses https://eips.ethereum.org/EIPS/eip-2929
@@ -126,7 +115,7 @@ func newBerlinInstructionSet() JumpTable {
 }
 
 // newIstanbulInstructionSet returns the frontier, homestead, byzantium,
-// constantinople, istanbul and petersburg instructions.
+// contantinople, istanbul and petersburg instructions.
 func newIstanbulInstructionSet() JumpTable {
 	instructionSet := newConstantinopleInstructionSet()
 
@@ -138,7 +127,7 @@ func newIstanbulInstructionSet() JumpTable {
 }
 
 // newConstantinopleInstructionSet returns the frontier, homestead,
-// byzantium and constantinople instructions.
+// byzantium and contantinople instructions.
 func newConstantinopleInstructionSet() JumpTable {
 	instructionSet := newByzantiumInstructionSet()
 	instructionSet[SHL] = &operation{

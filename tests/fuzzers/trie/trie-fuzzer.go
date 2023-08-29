@@ -19,13 +19,10 @@ package trie
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/trienode"
 )
 
 // randTest performs random trie operations.
@@ -142,22 +139,21 @@ func Fuzz(input []byte) int {
 }
 
 func runRandTest(rt randTest) error {
-	var (
-		triedb = trie.NewDatabase(rawdb.NewMemoryDatabase(), nil)
-		tr     = trie.NewEmpty(triedb)
-		origin = types.EmptyRootHash
-		values = make(map[string]string) // tracks content of the trie
-	)
+	triedb := trie.NewDatabase(rawdb.NewMemoryDatabase())
+
+	tr := trie.NewEmpty(triedb)
+	values := make(map[string]string) // tracks content of the trie
+
 	for i, step := range rt {
 		switch step.op {
 		case opUpdate:
-			tr.MustUpdate(step.key, step.value)
+			tr.Update(step.key, step.value)
 			values[string(step.key)] = string(step.value)
 		case opDelete:
-			tr.MustDelete(step.key)
+			tr.Delete(step.key)
 			delete(values, string(step.key))
 		case opGet:
-			v := tr.MustGet(step.key)
+			v := tr.Get(step.key)
 			want := values[string(step.key)]
 			if string(v) != want {
 				rt[i].err = fmt.Errorf("mismatch for key %#x, got %#x want %#x", step.key, v, want)
@@ -165,12 +161,9 @@ func runRandTest(rt randTest) error {
 		case opHash:
 			tr.Hash()
 		case opCommit:
-			hash, nodes, err := tr.Commit(false)
-			if err != nil {
-				return err
-			}
+			hash, nodes := tr.Commit(false)
 			if nodes != nil {
-				if err := triedb.Update(hash, origin, 0, trienode.NewWithNodeSet(nodes), nil); err != nil {
+				if err := triedb.Update(trie.NewWithNodeSet(nodes)); err != nil {
 					return err
 				}
 			}
@@ -179,18 +172,17 @@ func runRandTest(rt randTest) error {
 				return err
 			}
 			tr = newtr
-			origin = hash
 		case opItercheckhash:
 			checktr := trie.NewEmpty(triedb)
-			it := trie.NewIterator(tr.MustNodeIterator(nil))
+			it := trie.NewIterator(tr.NodeIterator(nil))
 			for it.Next() {
-				checktr.MustUpdate(it.Key, it.Value)
+				checktr.Update(it.Key, it.Value)
 			}
 			if tr.Hash() != checktr.Hash() {
-				return errors.New("hash mismatch in opItercheckhash")
+				return fmt.Errorf("hash mismatch in opItercheckhash")
 			}
 		case opProve:
-			rt[i].err = tr.Prove(step.key, proofDb{})
+			rt[i].err = tr.Prove(step.key, 0, proofDb{})
 		}
 		// Abort the test on error.
 		if rt[i].err != nil {

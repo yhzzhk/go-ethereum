@@ -33,18 +33,12 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-var (
-	errInvalidTopic   = errors.New("invalid topic(s)")
-	errFilterNotFound = errors.New("filter not found")
-)
-
 // filter is a helper struct that holds meta information over the filter type
 // and associated subscription in the event system.
 type filter struct {
 	typ      Type
 	deadline *time.Timer // filter is inactive when deadline triggers
 	hashes   []common.Hash
-	fullTx   bool
 	txs      []*types.Transaction
 	crit     FilterCriteria
 	logs     []*types.Log
@@ -109,14 +103,14 @@ func (api *FilterAPI) timeoutLoop(timeout time.Duration) {
 //
 // It is part of the filter package because this filter can be used through the
 // `eth_getFilterChanges` polling method that is also used for log filters.
-func (api *FilterAPI) NewPendingTransactionFilter(fullTx *bool) rpc.ID {
+func (api *FilterAPI) NewPendingTransactionFilter() rpc.ID {
 	var (
 		pendingTxs   = make(chan []*types.Transaction)
 		pendingTxSub = api.events.SubscribePendingTxs(pendingTxs)
 	)
 
 	api.filtersMu.Lock()
-	api.filters[pendingTxSub.ID] = &filter{typ: PendingTransactionsSubscription, fullTx: fullTx != nil && *fullTx, deadline: time.NewTimer(api.timeout), txs: make([]*types.Transaction, 0), s: pendingTxSub}
+	api.filters[pendingTxSub.ID] = &filter{typ: PendingTransactionsSubscription, deadline: time.NewTimer(api.timeout), txs: make([]*types.Transaction, 0), s: pendingTxSub}
 	api.filtersMu.Unlock()
 
 	go func() {
@@ -381,7 +375,7 @@ func (api *FilterAPI) GetFilterLogs(ctx context.Context, id rpc.ID) ([]*types.Lo
 	api.filtersMu.Unlock()
 
 	if !found || f.typ != LogsSubscription {
-		return nil, errFilterNotFound
+		return nil, fmt.Errorf("filter not found")
 	}
 
 	var filter *Filter
@@ -418,9 +412,6 @@ func (api *FilterAPI) GetFilterChanges(id rpc.ID) (interface{}, error) {
 	api.filtersMu.Lock()
 	defer api.filtersMu.Unlock()
 
-	chainConfig := api.sys.backend.ChainConfig()
-	latest := api.sys.backend.CurrentHeader()
-
 	if f, found := api.filters[id]; found {
 		if !f.deadline.Stop() {
 			// timer expired but filter is not yet removed in timeout loop
@@ -435,21 +426,9 @@ func (api *FilterAPI) GetFilterChanges(id rpc.ID) (interface{}, error) {
 			f.hashes = nil
 			return returnHashes(hashes), nil
 		case PendingTransactionsSubscription:
-			if f.fullTx {
-				txs := make([]*ethapi.RPCTransaction, 0, len(f.txs))
-				for _, tx := range f.txs {
-					txs = append(txs, ethapi.NewRPCPendingTransaction(tx, latest, chainConfig))
-				}
-				f.txs = nil
-				return txs, nil
-			} else {
-				hashes := make([]common.Hash, 0, len(f.txs))
-				for _, tx := range f.txs {
-					hashes = append(hashes, tx.Hash())
-				}
-				f.txs = nil
-				return hashes, nil
-			}
+			txs := f.txs
+			f.txs = nil
+			return txs, nil
 		case LogsSubscription, MinedAndPendingLogsSubscription:
 			logs := f.logs
 			f.logs = nil
@@ -457,7 +436,7 @@ func (api *FilterAPI) GetFilterChanges(id rpc.ID) (interface{}, error) {
 		}
 	}
 
-	return []interface{}{}, errFilterNotFound
+	return []interface{}{}, fmt.Errorf("filter not found")
 }
 
 // returnHashes is a helper that will return an empty hash array case the given hash array is nil,
@@ -496,7 +475,7 @@ func (args *FilterCriteria) UnmarshalJSON(data []byte) error {
 	if raw.BlockHash != nil {
 		if raw.FromBlock != nil || raw.ToBlock != nil {
 			// BlockHash is mutually exclusive with FromBlock/ToBlock criteria
-			return errors.New("cannot specify both BlockHash and FromBlock/ToBlock, choose one or the other")
+			return fmt.Errorf("cannot specify both BlockHash and FromBlock/ToBlock, choose one or the other")
 		}
 		args.BlockHash = raw.BlockHash
 	} else {
@@ -569,11 +548,11 @@ func (args *FilterCriteria) UnmarshalJSON(data []byte) error {
 						}
 						args.Topics[i] = append(args.Topics[i], parsed)
 					} else {
-						return errInvalidTopic
+						return fmt.Errorf("invalid topic(s)")
 					}
 				}
 			default:
-				return errInvalidTopic
+				return fmt.Errorf("invalid topic(s)")
 			}
 		}
 	}

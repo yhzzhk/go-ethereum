@@ -50,10 +50,6 @@ func (c *collector) addCounter(name string, m metrics.Counter) {
 	c.writeGaugeCounter(name, m.Count())
 }
 
-func (c *collector) addCounterFloat64(name string, m metrics.CounterFloat64) {
-	c.writeGaugeCounter(name, m.Count())
-}
-
 func (c *collector) addGauge(name string, m metrics.Gauge) {
 	c.writeGaugeCounter(name, m.Value())
 }

@@ -1,0 +1,138 @@
+package neo4j
+
+import (
+	"context"
+
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+)
+
+const (
+	uri      = "bolt://localhost:7687"
+	username = "neo4j"
+	password = "11111111"
+)
+
+type cqlconnection struct {
+	uri      string
+	username string
+	password string
+}
+
+func NewCQLConnection(ctx context.Context) *cqlconnection {
+
+	cn := &cqlconnection{
+		uri:      uri,
+		username: username,
+		password: password,
+	}
+	return cn
+}
+
+func (cn *cqlconnection) CreatNode(ctx context.Context, id string, ip string) (string, error) {
+	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(cn.username, cn.password, ""))
+	if err != nil {
+		return "", err
+	}
+	defer driver.Close(ctx)
+
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+	defer session.Close(ctx)
+
+	cql := "CREATE (a:Node {id:$id, ip:$ip}) RETURN a.id + ', from node ' + id(a) "
+
+	node, err := session.ExecuteWrite(ctx, func(transaction neo4j.ManagedTransaction) (any, error) {
+		result, err := transaction.Run(ctx,
+			cql, map[string]any{"id": id, "ip": ip})
+		if err != nil {
+			return "", err
+		}
+
+		if result.Next(ctx) {
+			return result.Record().Values[0], nil
+		}
+
+		return "", result.Err()
+	})
+	if err != nil {
+		return "", err
+	}
+	return node.(string), nil
+}
+
+func (cn *cqlconnection) IfNodeIn(ctx context.Context, id string) (bool, error) {
+	// 初始值设置为false
+	r := false
+
+	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(cn.username, cn.password, ""))
+	if err != nil {
+		return r, err
+	}
+	defer driver.Close(ctx)
+
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead}) // 以只读模式创建session
+	defer session.Close(ctx)
+
+	// 定义Cypher查询语句
+	cql := "MATCH (a:Node {id: $id}) RETURN a.id"
+
+	// 执行查询
+	result, err := session.Run(ctx, cql, map[string]interface{}{"id": id})
+	if err != nil {
+		return r, err
+	}
+
+	// 检查结果中是否存在记录
+	if result.Next(ctx) {
+		r = true
+	}
+
+	return r, result.Err()
+}
+
+// CreateEdge 用于在Neo4j数据库中创建两个节点之间的关系
+func (cn *cqlconnection) CreateEdge(ctx context.Context, id1 string, id2 string, distance string) (string, error) {
+	// 创建Neo4j driver
+	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(cn.username, cn.password, ""))
+	if err != nil {
+		return "", err
+	}
+	defer driver.Close(ctx)
+
+	// 创建Neo4j session
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+
+	// 使用defer确保session关闭
+	defer session.Close(ctx)
+
+	// 定义Cypher查询语句
+	cqlCheck := "MATCH (a:Node {id: $id1})-[:to]->(b:Node {id: $id2}) RETURN count(*)"
+	cqlCreate := "MATCH (a:Node {id: $id1}), (b:Node {id: $id2}) CREATE (a)-[:to{distance:" + distance + "}]->(b) RETURN 'Edge created successfully' AS message"
+	// 检查是否已经存在关系
+	result, err := session.Run(ctx, cqlCheck, map[string]interface{}{"id1": id1, "id2": id2})
+	if err != nil {
+		return "", err
+	}
+
+	if result.Next(ctx) {
+		count, ok := result.Record().Get("count(*)")
+		if !ok {
+			return "", nil
+		}
+		if count.(int64) > 0 {
+			return "Relationship already exists", nil
+		}
+	}
+
+	// 执行查询创建关系
+	result, err = session.Run(ctx, cqlCreate, map[string]interface{}{"id1": id1, "id2": id2})
+	if err != nil {
+		return "", err
+	}
+
+	// 检查结果中是否存在记录
+	if result.Next(ctx) {
+		return result.Record().Values[0].(string), nil
+	}
+
+	return "", nil
+}
