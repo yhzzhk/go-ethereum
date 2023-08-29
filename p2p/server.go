@@ -964,6 +964,7 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 	}
 
 	// If dialing, figure out the remote public key.
+	// 根据是否有拨号目标 (dialDest)，从拨号目标中提取远程公钥。如果提取失败，会记录日志并返回一个错误。
 	if dialDest != nil {
 		dialPubkey := new(ecdsa.PublicKey)
 		if err := dialDest.Load((*enode.Secp256k1)(dialPubkey)); err != nil {
@@ -974,6 +975,8 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 	}
 
 	// Run the RLPx handshake.
+	// RLPx 握手，使用给定的私钥 (srv.PrivateKey) 和连接对象 c。如果握手失败，会记录日志并返回错误。
+
 	remotePubkey, err := c.doEncHandshake(srv.PrivateKey)
 	if err != nil {
 		srv.log.Trace("Failed RLPx handshake", "addr", c.fd.RemoteAddr(), "conn", c.flags, "err", err)
