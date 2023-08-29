@@ -4,7 +4,7 @@
 
 .PHONY: geth android ios evm all test clean
 
-export GOPATH = /home/yhz/workspace/go-ethereum/build/_workspace
+export GOPATH = /home/yhz/github/go-ethereum/build/_workspace
 GOBIN = ./build/bin
 GO ?= latest
 GORUN = env GO111MODULE=on go run
