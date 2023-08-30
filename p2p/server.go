@@ -19,6 +19,7 @@ package p2p
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
 	"errors"
@@ -38,6 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/p2p/nat"
+	"github.com/ethereum/go-ethereum/p2p/neo4j"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 )
 
@@ -784,12 +786,16 @@ running: // 是个标签？
 				fmt.Printf("节点信息\n")
 				fmt.Printf("id:%s\n", p.ID().String())
 				fmt.Printf("name:%s\n", p.Fullname())
-				for i, c := range p.Caps() {
-					caps := c.String()
-					fmt.Printf("protocols %d:%s\n", i, caps)
+				caps := ""
+				for _, c := range p.Caps() {
+					caps = caps + c.String()
+					// fmt.Printf("protocols %d:%s\n", i, caps)
 				}
 				// 加到neo4j数据库中
-
+				ctx := context.Background()
+				cn := neo4j.NewCQLConnection(ctx)
+				rst, _ := cn.Addinfo(ctx, p.ID().String(), p.Fullname(), caps)
+				fmt.Printf("tcp节点信息导入数据库:%s,id:%s\n", rst, p.ID().String())
 				// 注释下面代码，不将peer加到列表中，从而能持续和不同的节点建立tcp连接
 				// srv.dialsched.peerAdded(c)
 				// if p.Inbound() {

@@ -136,3 +136,34 @@ func (cn *cqlconnection) CreateEdge(ctx context.Context, id1 string, id2 string,
 
 	return "", nil
 }
+
+func (cn *cqlconnection) Addinfo(ctx context.Context, id string, name string, protocols string) (string, error) {
+	// 创建Neo4j driver
+	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(cn.username, cn.password, ""))
+	if err != nil {
+		return "", err
+	}
+	defer driver.Close(ctx)
+
+	// 创建Neo4j session
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+
+	// 使用defer确保session关闭
+	defer session.Close(ctx)
+
+	// 定义Cypher查询语句
+	// cqlUpdate := "MATCH (node:Node {id: $id}) SET node.name = $name, node.protocols = $protocols RETURN 'Node updated successfully' AS message"
+	cqlUpdate := "MATCH (node) WHERE node.id = $id SET node.name = $name, node.protocols = $protocols RETURN 'Node updated successfully' AS message"
+	// 执行查询更新节点属性
+	result, err := session.Run(ctx, cqlUpdate, map[string]interface{}{"id": id, "name": name, "protocols": protocols})
+	if err != nil {
+		return "", err
+	}
+
+	// 检查结果中是否存在记录
+	if result.Next(ctx) {
+		return result.Record().Values[0].(string), nil
+	}
+
+	return "", nil
+}

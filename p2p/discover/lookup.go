@@ -187,7 +187,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 
 	//不在则创建新节点
 	if !exists {
-		log.Info("-------------不存在")
+		// log.Info("-------------不存在")
 		id := n.ID().String()
 		ip := n.IP().String()
 		rst, _ := cn.CreatNode(ctx, id, ip)
