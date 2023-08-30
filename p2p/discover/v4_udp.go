@@ -376,14 +376,14 @@ func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubke
 		// targets = append(targets, &targetnew)
 	}
 
-	for _, target := range targets {
+	for _, tar := range targets {
 		// targetid := enode.ID(crypto.Keccak256Hash(target[:]))
 		// a, _ := hex.DecodeString(targetid.GoString())
 		// b, _ := hex.DecodeString(toid.GoString())
 		// distance := enode.LogDist(a, b)
 		// log.Info("发送findnode包", "toid", toid, "targetid", targetid.GoString(), "distance", distance)
 		t.send(toaddr, toid, &v4wire.Findnode{
-			Target:     v4wire.Pubkey(*target),
+			Target:     v4wire.Pubkey(*tar),
 			Expiration: uint64(time.Now().Add(expiration).Unix()),
 		})
 	}

@@ -102,6 +102,7 @@ type transport interface {
 	lookupRandom() []*enode.Node
 	lookupSelf() []*enode.Node
 	ping(*enode.Node) (seq uint64, err error)
+	Ping(*enode.Node) (err error)
 }
 
 // bucket contains nodes, ordered by their last activity. the entry
@@ -316,9 +317,9 @@ func (tab *Table) doRefresh(done chan struct{}) {
 	// (not hash-sized) and it is not easily possible to generate a
 	// sha3 preimage that falls into a chosen bucket.
 	// We perform a few lookups with a random target instead.
-	for i := 0; i < 3; i++ {
-		tab.net.lookupRandom()
-	}
+	// for i := 0; i < 3; i++ {
+	// 	tab.net.lookupRandom()
+	// }
 }
 
 func (tab *Table) loadSeedNodes() {

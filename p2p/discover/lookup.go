@@ -190,7 +190,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		// log.Info("-------------不存在")
 		id := n.ID().String()
 		ip := n.IP().String()
-		rst, _ := cn.CreatNode(ctx, id, ip)
+		rst, _ := cn.CreatNode(ctx, id, ip, true)
 		log.Info("创建目标节点", rst)
 	}
 
@@ -198,6 +198,13 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 	// 同时记录每一个邻居节点与对方节点的距离（也就是邻居节点在对方路由表中的哪个bucket）
 	nid := n.ID()
 	for _, m := range r {
+		// 判断是否r中的节点是否能ping通
+		err := it.tab.net.Ping(&m.Node)
+		ifLive := true
+		if err != nil {
+			ifLive = false
+		}
+
 		//计算距离
 		distance := enode.LogDist(nid, m.ID()) - 239
 		distancestr := strconv.Itoa(distance)
@@ -211,20 +218,23 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 			log.Info("Error:", err)
 		}
 		if !exists {
-			rst, _ := cn.CreatNode(ctx, id, ip)
+			rst, _ := cn.CreatNode(ctx, id, ip, ifLive)
 			log.Info("创建邻居节点", rst)
 		}
 		rst, _ := cn.CreateEdge(ctx, n.ID().String(), id, distancestr)
 		// fmt.Printf("创建节点关系,距离为%d", distance)
 		log.Info("创建节点关系", rst)
+		if ifLive {
+			it.tab.addSeenNode(n)
+		}
 	}
 
 	// Grab as many nodes as possible. Some of them might not be alive anymore, but we'll
 	// just remove those again during revalidation.
 	//如果查询成功，将返回的节点列表中的节点添加到本地路由表中，并将这些节点发送回通道reply，表示查询成功。
-	for _, n := range r {
-		it.tab.addSeenNode(n)
-	}
+	// for _, n := range r {
+	// 	it.tab.addSeenNode(n)
+	// }
 	reply <- r
 }
 
