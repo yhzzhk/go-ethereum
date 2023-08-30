@@ -348,7 +348,7 @@ func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubke
 			}
 			nodes = append(nodes, n)
 		}
-		log.Info("收到的节点数", toid.String(), nreceived)
+		fmt.Printf("从节点%s收到的节点数:%d", toid.String(), nreceived)
 		return false, false
 	})
 
