@@ -988,6 +988,11 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 		c.node = nodeFromConn(remotePubkey, c.fd)
 	}
 	clog := srv.log.New("id", c.node.ID(), "addr", c.fd.RemoteAddr(), "conn", c.flags)
+
+	// cid := c.node.ID().String()
+	// cip := c.node.IP().String()
+	// fmt.Printf("尝试建立tcp连接,id:%s, ip:%s \n", cid, cip)
+
 	err = srv.checkpoint(c, srv.checkpointPostHandshake)
 	if err != nil {
 		clog.Trace("Rejected peer", "err", err)
