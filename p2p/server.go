@@ -66,7 +66,10 @@ const (
 	frameWriteTimeout = 20 * time.Second
 )
 
-var errServerStopped = errors.New("server stopped")
+var (
+	errServerStopped = errors.New("server stopped")
+	// HashTable        = hashtable.NewHashTable()
+)
 
 // Config holds Server options.
 type Config struct {
@@ -781,17 +784,17 @@ running: // 是个标签？
 				p := srv.launchPeer(c)
 				peers[c.node.ID()] = p
 				srv.log.Debug("Adding p2p peer", "peercount", len(peers), "id", p.ID(), "conn", c.flags, "addr", p.RemoteAddr(), "name", p.Name())
-				fmt.Printf("------------------------------\n")
-				// 输出新添加peer的信息
-				fmt.Printf("节点信息\n")
-				fmt.Printf("id:%s\n", p.ID().String())
-				fmt.Printf("name:%s\n", p.Fullname())
+				// fmt.Printf("------------------------------\n")
+				// // 输出新添加peer的信息
+				// fmt.Printf("节点信息\n")
+				// fmt.Printf("id:%s\n", p.ID().String())
+				// fmt.Printf("name:%s\n", p.Fullname())
+				// 加到neo4j数据库中
 				caps := ""
 				for _, c := range p.Caps() {
 					caps = caps + c.String()
 					// fmt.Printf("protocols %d:%s\n", i, caps)
 				}
-				// 加到neo4j数据库中
 				ctx := context.Background()
 				cn := neo4j.NewCQLConnection(ctx)
 				rst, _ := cn.Addinfo(ctx, p.ID().String(), p.Fullname(), caps)
@@ -931,6 +934,15 @@ func (srv *Server) listenLoop() {
 		}
 		go func() {
 			srv.SetupConn(fd, inboundConn, nil)
+			// // 测试确定建立连接的节点位于路由表的哪里
+			// fmt.Printf("---------------------------------------------\n")
+			// fmt.Printf("建立tcp连接的ip地址:\n", fd.RemoteAddr().String())
+			// nowtable := srv.ntab.Tab()
+			// for i, b := range nowtable.Getbucket() {
+			// 	for _, n := range b.Getentries() {
+			// 		fmt.Printf("第%d个bucket的节点ip:%s\n", i, n.Node.IP().String())
+			// 	}
+			// }
 			slots <- struct{}{}
 		}()
 	}

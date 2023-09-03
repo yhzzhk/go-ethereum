@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/neo4j"
 )
@@ -49,8 +50,8 @@ func newLookup(ctx context.Context, tab *Table, target enode.ID, q queryFunc) *l
 	it := &lookup{
 		tab:       tab,
 		queryfunc: q,
-		asked:     make(map[enode.ID]bool),
-		seen:      make(map[enode.ID]bool),
+		asked:     make(map[enode.ID]bool), //确保已经发送过findnode的节点不再被发送
+		seen:      make(map[enode.ID]bool), //确保已经加进过路由表的节点不再被加进去
 		result:    nodesByDistance{target: target},
 		replyCh:   make(chan []*node, alpha),
 		cancelCh:  ctx.Done(),
@@ -192,6 +193,15 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		ip := n.IP().String()
 		rst, _ := cn.CreatNode(ctx, id, ip, true)
 		log.Info("创建目标节点", rst)
+
+		// // 加入哈希表 ping过, neighbor过
+		// if !HashTable.Matchnode(id) {
+		// 	newnode := hashtable.Node{ID: id, IP: ip, Pinged: true, Findnoded: true}
+		// 	HashTable.CreateNode(newnode)
+		// } else {
+		// 	newnode := hashtable.Node{ID: id, IP: ip, Pinged: true, Findnoded: true}
+		// 	HashTable.UpdateNode(newnode)
+		// }
 	}
 
 	// 对每一个邻居节点判断是否在数据库中，在则直接添加关系，不在则创建节点后添加关系
@@ -203,7 +213,23 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		ifLive := true
 		if err != nil {
 			ifLive = false
+			// if !HashTable.Matchnode(m.ID().String()) {
+			// 	newnode := hashtable.Node{ID: m.ID().String(), IP: m.IP().String(), Pinged: false}
+			// 	HashTable.CreateNode(newnode)
+			// } else {
+			// 	newnode := hashtable.Node{ID: m.ID().String(), IP: m.IP().String(), Pinged: false}
+			// 	HashTable.UpdateNode(newnode)
+			// }
 		}
+		// } else {
+		// 	if !HashTable.Matchnode(m.ID().String()) {
+		// 		newnode := hashtable.Node{ID: m.ID().String(), IP: m.IP().String(), Pinged: true}
+		// 		HashTable.CreateNode(newnode)
+		// 	} else {
+		// 		newnode := hashtable.Node{ID: m.ID().String(), IP: m.IP().String(), Pinged: true}
+		// 		HashTable.UpdateNode(newnode)
+		// 	}
+		// }
 
 		//计算距离
 		distance := enode.LogDist(nid, m.ID()) - 239
@@ -228,7 +254,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 			it.tab.addSeenNode(n)
 		}
 	}
-
+	// fmt.Printf("哈希表长度:%d\n", HashTable.Length)
 	// Grab as many nodes as possible. Some of them might not be alive anymore, but we'll
 	// just remove those again during revalidation.
 	//如果查询成功，将返回的节点列表中的节点添加到本地路由表中，并将这些节点发送回通道reply，表示查询成功。

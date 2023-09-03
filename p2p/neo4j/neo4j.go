@@ -10,6 +10,9 @@ const (
 	uri      = "bolt://localhost:7687"
 	username = "neo4j"
 	password = "11111111"
+	// uri      = "bolt://3.95.151.204:7687"
+	// username = "neo4j"
+	// password = "hushes-insulation-post"
 )
 
 type cqlconnection struct {
