@@ -37,9 +37,9 @@ import (
 )
 
 const (
-	lookupRequestLimit      = 3  // max requests against a single node during lookup
-	findnodeResultLimit     = 16 // applies in FINDNODE handler
-	totalNodesResponseLimit = 5  // applies in waitForNodes
+	lookupRequestLimit      = 3    // max requests against a single node during lookup
+	findnodeResultLimit     = 1000 // applies in FINDNODE handler
+	totalNodesResponseLimit = 5    // applies in waitForNodes
 
 	respTimeoutV5 = 700 * time.Millisecond
 )
@@ -301,39 +301,85 @@ func (t *UDPv5) newLookup(ctx context.Context, target enode.ID) *lookup {
 // lookupWorker performs FINDNODE calls against a single node during lookup.
 func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 	var (
-		dists = lookupDistances(target, destNode.ID())
-		nodes = nodesByDistance{target: target}
-		err   error
+		// dists = lookupDistances(target, destNode.ID())
+		nodes                        = nodesByDistance{target: target}
+		err1, err2, err3, err4, err5 error
 	)
-	var r []*enode.Node
-	r, err = t.findnode(unwrapNode(destNode), dists)
-	if errors.Is(err, errClosed) {
-		return nil, err
+	// var dist1, dist2, dist3, dist4, dist5 []uint
+	dist1 := []uint{240, 241, 242}
+	dist2 := []uint{243, 244, 245}
+	dist3 := []uint{246, 247, 248}
+	dist4 := []uint{249, 250, 251}
+	dist5 := []uint{252, 253, 254}
+
+	var r1, r2, r3, r4, r5 []*enode.Node
+	r1, err1 = t.findnode(unwrapNode(destNode), dist1)
+	r2, err2 = t.findnode(unwrapNode(destNode), dist2)
+	r3, err3 = t.findnode(unwrapNode(destNode), dist3)
+	r4, err4 = t.findnode(unwrapNode(destNode), dist4)
+	r5, err5 = t.findnode(unwrapNode(destNode), dist5)
+
+	if errors.Is(err1, errClosed) {
+		return nil, err1
 	}
-	for _, n := range r {
+	if errors.Is(err2, errClosed) {
+		return nil, err2
+	}
+	if errors.Is(err3, errClosed) {
+		return nil, err3
+	}
+	if errors.Is(err4, errClosed) {
+		return nil, err4
+	}
+	if errors.Is(err5, errClosed) {
+		return nil, err5
+	}
+
+	for _, n := range r1 {
 		if n.ID() != t.Self().ID() {
 			nodes.push(wrapNode(n), findnodeResultLimit)
 		}
 	}
-	return nodes.entries, err
+	for _, n := range r2 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+	for _, n := range r3 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+	for _, n := range r4 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+	for _, n := range r5 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+
+	return nodes.entries, nil
 }
 
 // lookupDistances computes the distance parameter for FINDNODE calls to dest.
 // It chooses distances adjacent to logdist(target, dest), e.g. for a target
 // with logdist(target, dest) = 255 the result is [255, 256, 254].
-func lookupDistances(target, dest enode.ID) (dists []uint) {
-	td := enode.LogDist(target, dest)
-	dists = append(dists, uint(td))
-	for i := 1; len(dists) < lookupRequestLimit; i++ {
-		if td+i <= 256 {
-			dists = append(dists, uint(td+i))
-		}
-		if td-i > 0 {
-			dists = append(dists, uint(td-i))
-		}
-	}
-	return dists
-}
+// func lookupDistances(target, dest enode.ID) (dists []uint) {
+// 	td := enode.LogDist(target, dest)
+// 	dists = append(dists, uint(td))
+// 	for i := 1; len(dists) < lookupRequestLimit; i++ {
+// 		if td+i <= 256 {
+// 			dists = append(dists, uint(td+i))
+// 		}
+// 		if td-i > 0 {
+// 			dists = append(dists, uint(td-i))
+// 		}
+// 	}
+// 	return dists
+// }
 
 // ping calls PING on a node and waits for a PONG response.
 func (t *UDPv5) ping(n *enode.Node) (uint64, error) {
@@ -363,6 +409,7 @@ func (t *UDPv5) RequestENR(n *enode.Node) (*enode.Node, error) {
 
 // findnode calls FINDNODE on a node and waits for responses.
 func (t *UDPv5) findnode(n *enode.Node, distances []uint) ([]*enode.Node, error) {
+	fmt.Printf("向节点:%s发送findnode消息,距离为%d, %d, %d", n.ID().String(), distances[0], distances[1], distances[2])
 	resp := t.call(n, v5wire.NodesMsg, &v5wire.Findnode{Distances: distances})
 	return t.waitForNodes(resp, distances)
 }

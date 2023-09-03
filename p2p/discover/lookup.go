@@ -191,7 +191,8 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		// log.Info("-------------不存在")
 		id := n.ID().String()
 		ip := n.IP().String()
-		rst, _ := cn.CreatNode(ctx, id, ip, true)
+		// port := n.addr()
+		rst, _ := cn.CreatNode(ctx, id, ip, true, true)
 		log.Info("创建目标节点", rst)
 
 		// // 加入哈希表 ping过, neighbor过
@@ -244,7 +245,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 			log.Info("Error:", err)
 		}
 		if !exists {
-			rst, _ := cn.CreatNode(ctx, id, ip, ifLive)
+			rst, _ := cn.CreatNode(ctx, id, ip, ifLive, true)
 			log.Info("创建邻居节点", rst)
 		}
 		rst, _ := cn.CreateEdge(ctx, n.ID().String(), id, distancestr)
