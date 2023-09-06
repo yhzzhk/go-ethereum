@@ -177,7 +177,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 	// 查询成功，将返回的节点列表及与对方节点的邻居关系加进neo4j数据库中
 	ctx := context.Background()
 	cn := neo4j.NewCQLConnection(ctx)
-	log.Info("---------------------prysm开始导入neo4j数据库1")
+	log.Info("---------------------prysm开始导入neo4j数据库2")
 
 	//判断目标节点是否在数据库中
 	exists, err := cn.IfNodeIn(ctx, n.ID().String())

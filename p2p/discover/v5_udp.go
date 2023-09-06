@@ -409,7 +409,7 @@ func (t *UDPv5) RequestENR(n *enode.Node) (*enode.Node, error) {
 
 // findnode calls FINDNODE on a node and waits for responses.
 func (t *UDPv5) findnode(n *enode.Node, distances []uint) ([]*enode.Node, error) {
-	fmt.Printf("向节点:%s发送findnode消息,距离为%d, %d, %d\n", n.ID().String(), distances[0], distances[1], distances[2])
+	// fmt.Printf("向节点:%s发送findnode消息,距离为%d, %d, %d\n", n.ID().String(), distances[0], distances[1], distances[2])
 	resp := t.call(n, v5wire.NodesMsg, &v5wire.Findnode{Distances: distances})
 	return t.waitForNodes(resp, distances)
 }
