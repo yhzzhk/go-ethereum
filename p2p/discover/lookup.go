@@ -177,7 +177,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 	// 查询成功，将返回的节点列表及与对方节点的邻居关系加进neo4j数据库中
 	ctx := context.Background()
 	cn := neo4j.NewCQLConnection(ctx)
-	log.Info("---------------------开始导入neo4j数据库")
+	log.Info("---------------------prysm开始导入neo4j数据库")
 
 	//判断目标节点是否在数据库中
 	exists, err := cn.IfNodeIn(ctx, n.ID().String())
@@ -191,8 +191,9 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		// log.Info("-------------不存在")
 		id := n.ID().String()
 		ip := n.IP().String()
+		port := strconv.Itoa(n.addr().Port)
 		// port := n.addr()
-		rst, _ := cn.CreatNode(ctx, id, ip, true, true)
+		rst, _ := cn.CreatNode(ctx, id, ip, port, true)
 		log.Info("创建目标节点", rst)
 
 		// // 加入哈希表 ping过, neighbor过
@@ -239,13 +240,14 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		//写进数据库
 		id := m.ID().String()
 		ip := m.IP().String()
+		port := strconv.Itoa(m.addr().Port)
 		exists, err := cn.IfNodeIn(ctx, id)
 		if err != nil {
 			// 处理错误
 			log.Info("Error:", err)
 		}
 		if !exists {
-			rst, _ := cn.CreatNode(ctx, id, ip, ifLive, true)
+			rst, _ := cn.CreatNode(ctx, id, ip, port, ifLive)
 			log.Info("创建邻居节点", rst)
 		}
 		rst, _ := cn.CreateEdge(ctx, n.ID().String(), id, distancestr)
