@@ -31,7 +31,7 @@ func NewCQLConnection(ctx context.Context) *cqlconnection {
 	return cn
 }
 
-func (cn *cqlconnection) CreatNode(ctx context.Context, id string, ip string, port string, iflive bool) (string, error) {
+func (cn *cqlconnection) CreatNode(ctx context.Context, id string, ip string) (string, error) {
 	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(cn.username, cn.password, ""))
 	if err != nil {
 		return "", err
@@ -41,11 +41,11 @@ func (cn *cqlconnection) CreatNode(ctx context.Context, id string, ip string, po
 	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close(ctx)
 
-	cql := "CREATE (a:Node {id:$id, ip:$ip, port:$port, ping:$ping}) RETURN a.id + ', from node ' + id(a) "
+	cql := "CREATE (a:Node {id:$id, ip:$ip}) RETURN a.id + ', from node ' + id(a) "
 
 	node, err := session.ExecuteWrite(ctx, func(transaction neo4j.ManagedTransaction) (any, error) {
 		result, err := transaction.Run(ctx,
-			cql, map[string]any{"id": id, "ip": ip, "port": port, "ping": iflive})
+			cql, map[string]any{"id": id, "ip": ip})
 		if err != nil {
 			return "", err
 		}

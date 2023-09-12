@@ -177,7 +177,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 	// 查询成功，将返回的节点列表及与对方节点的邻居关系加进neo4j数据库中
 	ctx := context.Background()
 	cn := neo4j.NewCQLConnection(ctx)
-	log.Info("---------------------prysm开始导入neo4j数据库2")
+	log.Info("---------------------开始导入neo4j数据库")
 
 	//判断目标节点是否在数据库中
 	exists, err := cn.IfNodeIn(ctx, n.ID().String())
@@ -191,48 +191,14 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		// log.Info("-------------不存在")
 		id := n.ID().String()
 		ip := n.IP().String()
-		port := strconv.Itoa(n.addr().Port)
-		// port := n.addr()
-		rst, _ := cn.CreatNode(ctx, id, ip, port, true)
+		rst, _ := cn.CreatNode(ctx, id, ip)
 		log.Info("创建目标节点", rst)
-
-		// // 加入哈希表 ping过, neighbor过
-		// if !HashTable.Matchnode(id) {
-		// 	newnode := hashtable.Node{ID: id, IP: ip, Pinged: true, Findnoded: true}
-		// 	HashTable.CreateNode(newnode)
-		// } else {
-		// 	newnode := hashtable.Node{ID: id, IP: ip, Pinged: true, Findnoded: true}
-		// 	HashTable.UpdateNode(newnode)
-		// }
 	}
 
 	// 对每一个邻居节点判断是否在数据库中，在则直接添加关系，不在则创建节点后添加关系
 	// 同时记录每一个邻居节点与对方节点的距离（也就是邻居节点在对方路由表中的哪个bucket）
 	nid := n.ID()
 	for _, m := range r {
-		// 判断是否r中的节点是否能ping通
-		err := it.tab.net.Ping(&m.Node)
-		ifLive := true
-		if err != nil {
-			ifLive = false
-			// if !HashTable.Matchnode(m.ID().String()) {
-			// 	newnode := hashtable.Node{ID: m.ID().String(), IP: m.IP().String(), Pinged: false}
-			// 	HashTable.CreateNode(newnode)
-			// } else {
-			// 	newnode := hashtable.Node{ID: m.ID().String(), IP: m.IP().String(), Pinged: false}
-			// 	HashTable.UpdateNode(newnode)
-			// }
-		}
-		// } else {
-		// 	if !HashTable.Matchnode(m.ID().String()) {
-		// 		newnode := hashtable.Node{ID: m.ID().String(), IP: m.IP().String(), Pinged: true}
-		// 		HashTable.CreateNode(newnode)
-		// 	} else {
-		// 		newnode := hashtable.Node{ID: m.ID().String(), IP: m.IP().String(), Pinged: true}
-		// 		HashTable.UpdateNode(newnode)
-		// 	}
-		// }
-
 		//计算距离
 		distance := enode.LogDist(nid, m.ID()) - 239
 		distancestr := strconv.Itoa(distance)
@@ -240,30 +206,26 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		//写进数据库
 		id := m.ID().String()
 		ip := m.IP().String()
-		port := strconv.Itoa(m.addr().Port)
 		exists, err := cn.IfNodeIn(ctx, id)
 		if err != nil {
 			// 处理错误
 			log.Info("Error:", err)
 		}
 		if !exists {
-			rst, _ := cn.CreatNode(ctx, id, ip, port, ifLive)
+			rst, _ := cn.CreatNode(ctx, id, ip)
 			log.Info("创建邻居节点", rst)
 		}
 		rst, _ := cn.CreateEdge(ctx, n.ID().String(), id, distancestr)
 		// fmt.Printf("创建节点关系,距离为%d", distance)
 		log.Info("创建节点关系", rst)
-		if ifLive {
-			it.tab.addSeenNode(n)
-		}
 	}
-	// fmt.Printf("哈希表长度:%d\n", HashTable.Length)
+
 	// Grab as many nodes as possible. Some of them might not be alive anymore, but we'll
 	// just remove those again during revalidation.
 	//如果查询成功，将返回的节点列表中的节点添加到本地路由表中，并将这些节点发送回通道reply，表示查询成功。
-	// for _, n := range r {
-	// 	it.tab.addSeenNode(n)
-	// }
+	for _, n := range r {
+		it.tab.addSeenNode(n)
+	}
 	reply <- r
 }
 
