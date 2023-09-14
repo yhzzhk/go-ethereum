@@ -784,26 +784,19 @@ running: // 是个标签？
 				p := srv.launchPeer(c)
 				peers[c.node.ID()] = p
 				srv.log.Debug("Adding p2p peer", "peercount", len(peers), "id", p.ID(), "conn", c.flags, "addr", p.RemoteAddr(), "name", p.Name())
-				// fmt.Printf("------------------------------\n")
-				// // 输出新添加peer的信息
-				// fmt.Printf("节点信息\n")
-				// fmt.Printf("id:%s\n", p.ID().String())
-				// fmt.Printf("name:%s\n", p.Fullname())
 				// 加到neo4j数据库中
 				caps := ""
 				for _, c := range p.Caps() {
 					caps = caps + c.String()
-					// fmt.Printf("protocols %d:%s\n", i, caps)
 				}
 				ctx := context.Background()
 				cn := neo4j.NewCQLConnection(ctx)
 				rst, _ := cn.Addinfo(ctx, p.ID().String(), p.Fullname(), caps)
 				fmt.Printf("tcp节点信息导入数据库:%s,id:%s\n", rst, p.ID().String())
-				// 注释下面代码，不将peer加到列表中，从而能持续和不同的节点建立tcp连接
-				// srv.dialsched.peerAdded(c)
-				// if p.Inbound() {
-				// 	inboundCount++
-				// }
+				srv.dialsched.peerAdded(c)
+				if p.Inbound() {
+					inboundCount++
+				}
 			}
 			c.cont <- err
 
