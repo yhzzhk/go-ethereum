@@ -6,13 +6,19 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-const (
-	uri      = "bolt://localhost:7687"
-	username = "neo4j"
-	password = "11111111"
-	// uri      = "bolt://3.95.151.204:7687"
-	// username = "neo4j"
-	// password = "hushes-insulation-post"
+// const (
+// 	uri      = "bolt://localhost:7687"
+// 	username = "neo4j"
+// 	password = "11111111"
+// 	// uri      = "bolt://3.95.151.204:7687"
+// 	// username = "neo4j"
+// 	// password = "hushes-insulation-post"
+// )
+
+var (
+    uri      = os.Getenv("NEO4J_URI")
+    username = os.Getenv("NEO4J_USERNAME")
+    password = os.Getenv("NEO4J_PASSWORD")
 )
 
 type cqlconnection struct {
@@ -20,6 +26,7 @@ type cqlconnection struct {
 	username string
 	password string
 }
+
 
 func NewCQLConnection(ctx context.Context) *cqlconnection {
 
