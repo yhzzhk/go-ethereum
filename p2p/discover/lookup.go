@@ -74,6 +74,7 @@ func (it *lookup) run() []*enode.Node {
 // advance advances the lookup until any new nodes have been found.
 // It returns false when the lookup has ended.
 func (it *lookup) advance() bool {
+	fmt.Println("开始advance")
 	for it.startQueries() {
 		select {
 		case nodes := <-it.replyCh:
@@ -106,6 +107,7 @@ func (it *lookup) shutdown() {
 }
 
 func (it *lookup) startQueries() bool {
+	fmt.Println("开始startqueries")
 	if it.queryfunc == nil {
 		return false
 	}
