@@ -18,7 +18,6 @@
 package state
 
 import (
-	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -46,17 +45,6 @@ const (
 type revision struct {
 	id           int
 	journalIndex int
-}
-
-type proofList [][]byte
-
-func (n *proofList) Put(key []byte, value []byte) error {
-	*n = append(*n, value)
-	return nil
-}
-
-func (n *proofList) Delete(key []byte) error {
-	panic("not supported")
 }
 
 // StateDB structs within the ethereum protocol are used to store anything
@@ -147,6 +135,9 @@ type StateDB struct {
 	StorageUpdated int
 	AccountDeleted int
 	StorageDeleted int
+
+	// Testing hooks
+	onCommit func(states *triestate.Set) // Hook invoked when commit is performed
 }
 
 // New creates a new state from a given trie.
@@ -297,6 +288,7 @@ func (s *StateDB) GetBalance(addr common.Address) *big.Int {
 	return common.Big0
 }
 
+// GetNonce retrieves the nonce from the given address or 0 if object not found
 func (s *StateDB) GetNonce(addr common.Address) uint64 {
 	stateObject := s.getStateObject(addr)
 	if stateObject != nil {
@@ -304,6 +296,16 @@ func (s *StateDB) GetNonce(addr common.Address) uint64 {
 	}
 
 	return 0
+}
+
+// GetStorageRoot retrieves the storage root from the given address or empty
+// if object not found.
+func (s *StateDB) GetStorageRoot(addr common.Address) common.Hash {
+	stateObject := s.getStateObject(addr)
+	if stateObject != nil {
+		return stateObject.Root()
+	}
+	return common.Hash{}
 }
 
 // TxIndex returns the current transaction index set by Prepare.
@@ -329,10 +331,10 @@ func (s *StateDB) GetCodeSize(addr common.Address) int {
 
 func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 	stateObject := s.getStateObject(addr)
-	if stateObject == nil {
-		return common.Hash{}
+	if stateObject != nil {
+		return common.BytesToHash(stateObject.CodeHash())
 	}
-	return common.BytesToHash(stateObject.CodeHash())
+	return common.Hash{}
 }
 
 // GetState retrieves a value from the given account's storage trie.
@@ -342,35 +344,6 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 		return stateObject.GetState(hash)
 	}
 	return common.Hash{}
-}
-
-// GetProof returns the Merkle proof for a given account.
-func (s *StateDB) GetProof(addr common.Address) ([][]byte, error) {
-	return s.GetProofByHash(crypto.Keccak256Hash(addr.Bytes()))
-}
-
-// GetProofByHash returns the Merkle proof for a given account.
-func (s *StateDB) GetProofByHash(addrHash common.Hash) ([][]byte, error) {
-	var proof proofList
-	err := s.trie.Prove(addrHash[:], &proof)
-	return proof, err
-}
-
-// GetStorageProof returns the Merkle proof for given storage slot.
-func (s *StateDB) GetStorageProof(a common.Address, key common.Hash) ([][]byte, error) {
-	trie, err := s.StorageTrie(a)
-	if err != nil {
-		return nil, err
-	}
-	if trie == nil {
-		return nil, errors.New("storage trie for requested address does not exist")
-	}
-	var proof proofList
-	err = trie.Prove(crypto.Keccak256(key.Bytes()), &proof)
-	if err != nil {
-		return nil, err
-	}
-	return proof, nil
 }
 
 // GetCommittedState retrieves a value from the given account's committed storage trie.
@@ -385,21 +358,6 @@ func (s *StateDB) GetCommittedState(addr common.Address, hash common.Hash) commo
 // Database retrieves the low level database supporting the lower level trie ops.
 func (s *StateDB) Database() Database {
 	return s.db
-}
-
-// StorageTrie returns the storage trie of an account. The return value is a copy
-// and is nil for non-existent accounts. An error will be returned if storage trie
-// is existent but can't be loaded correctly.
-func (s *StateDB) StorageTrie(addr common.Address) (Trie, error) {
-	stateObject := s.getStateObject(addr)
-	if stateObject == nil {
-		return nil, nil
-	}
-	cpy := stateObject.deepCopy(s)
-	if _, err := cpy.updateTrie(); err != nil {
-		return nil, err
-	}
-	return cpy.getTrie()
 }
 
 func (s *StateDB) HasSelfDestructed(addr common.Address) bool {
@@ -700,9 +658,6 @@ func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) 
 		delete(s.accountsOrigin, prev.address)
 		delete(s.storagesOrigin, prev.address)
 	}
-
-	newobj.created = true
-
 	s.setStateObject(newobj)
 	if prev != nil && !prev.deleted {
 		return newobj, prev
@@ -1006,16 +961,18 @@ func (s *StateDB) fastDeleteStorage(addrHash common.Hash, root common.Hash) (boo
 		nodes = trienode.NewNodeSet(addrHash)
 		slots = make(map[common.Hash][]byte)
 	)
-	stack := trie.NewStackTrie(func(owner common.Hash, path []byte, hash common.Hash, blob []byte) {
+	options := trie.NewStackTrieOptions()
+	options = options.WithWriter(func(path []byte, hash common.Hash, blob []byte) {
 		nodes.AddNode(path, trienode.NewDeleted())
 		size += common.StorageSize(len(path))
 	})
+	stack := trie.NewStackTrie(options)
 	for iter.Next() {
 		if size > storageDeleteLimit {
 			return true, size, nil, nil, nil
 		}
 		slot := common.CopyBytes(iter.Slot())
-		if iter.Error() != nil { // error might occur after Slot function
+		if err := iter.Error(); err != nil { // error might occur after Slot function
 			return false, 0, nil, nil, err
 		}
 		size += common.StorageSize(common.HashLength + len(slot))
@@ -1025,7 +982,7 @@ func (s *StateDB) fastDeleteStorage(addrHash common.Hash, root common.Hash) (boo
 			return false, 0, nil, nil, err
 		}
 	}
-	if iter.Error() != nil { // error might occur during iteration
+	if err := iter.Error(); err != nil { // error might occur during iteration
 		return false, 0, nil, nil, err
 	}
 	if stack.Hash() != root {
@@ -1038,7 +995,7 @@ func (s *StateDB) fastDeleteStorage(addrHash common.Hash, root common.Hash) (boo
 // employed when the associated state snapshot is not available. It iterates the
 // storage slots along with all internal trie nodes via trie directly.
 func (s *StateDB) slowDeleteStorage(addr common.Address, addrHash common.Hash, root common.Hash) (bool, common.StorageSize, map[common.Hash][]byte, *trienode.NodeSet, error) {
-	tr, err := s.db.OpenStorageTrie(s.originalRoot, addr, root)
+	tr, err := s.db.OpenStorageTrie(s.originalRoot, addr, root, s.trie)
 	if err != nil {
 		return false, 0, nil, nil, fmt.Errorf("failed to open storage trie, err: %w", err)
 	}
@@ -1103,12 +1060,10 @@ func (s *StateDB) deleteStorage(addr common.Address, addrHash common.Hash, root 
 			slotDeletionSkip.Inc(1)
 		}
 		n := int64(len(slots))
-		if n > slotDeletionMaxCount.Value() {
-			slotDeletionMaxCount.Update(n)
-		}
-		if int64(size) > slotDeletionMaxSize.Value() {
-			slotDeletionMaxSize.Update(int64(size))
-		}
+
+		slotDeletionMaxCount.UpdateIfGt(int64(len(slots)))
+		slotDeletionMaxSize.UpdateIfGt(int64(size))
+
 		slotDeletionTimer.UpdateSince(start)
 		slotDeletionCount.Mark(n)
 		slotDeletionSize.Mark(int64(size))
@@ -1321,12 +1276,16 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	}
 	if root != origin {
 		start := time.Now()
-		if err := s.db.TrieDB().Update(root, origin, block, nodes, triestate.New(s.accountsOrigin, s.storagesOrigin, incomplete)); err != nil {
+		set := triestate.New(s.accountsOrigin, s.storagesOrigin, incomplete)
+		if err := s.db.TrieDB().Update(root, origin, block, nodes, set); err != nil {
 			return common.Hash{}, err
 		}
 		s.originalRoot = root
 		if metrics.EnabledExpensive {
 			s.TrieDBCommits += time.Since(start)
+		}
+		if s.onCommit != nil {
+			s.onCommit(set)
 		}
 	}
 	// Clear all internal flags at the end of commit operation.

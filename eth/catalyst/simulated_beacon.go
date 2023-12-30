@@ -17,6 +17,7 @@
 package catalyst
 
 import (
+	"crypto/rand"
 	"errors"
 	"sync"
 	"time"
@@ -81,10 +82,6 @@ type SimulatedBeacon struct {
 }
 
 func NewSimulatedBeacon(period uint64, eth *eth.Ethereum) (*SimulatedBeacon, error) {
-	chainConfig := eth.APIBackend.ChainConfig()
-	if !chainConfig.IsDevMode {
-		return nil, errors.New("incompatible pre-existing chain configuration")
-	}
 	block := eth.BlockChain().CurrentBlock()
 	current := engine.ForkchoiceStateV1{
 		HeadBlockHash:      block.Hash(),
@@ -149,10 +146,13 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal) error {
 		c.setCurrentState(header.Hash(), *finalizedHash)
 	}
 
+	var random [32]byte
+	rand.Read(random[:])
 	fcResponse, err := c.engineAPI.ForkchoiceUpdatedV2(c.curForkchoiceState, &engine.PayloadAttributes{
 		Timestamp:             tstamp,
 		SuggestedFeeRecipient: feeRecipient,
 		Withdrawals:           withdrawals,
+		Random:                random,
 	})
 	if err != nil {
 		return err
@@ -195,7 +195,7 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal) error {
 func (c *SimulatedBeacon) loopOnDemand() {
 	var (
 		newTxs = make(chan core.NewTxsEvent)
-		sub    = c.eth.TxPool().SubscribeNewTxsEvent(newTxs)
+		sub    = c.eth.TxPool().SubscribeTransactions(newTxs, true)
 	)
 	defer sub.Unsubscribe()
 
