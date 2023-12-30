@@ -1,4 +1,4 @@
-// Copyright 2021 The go-ethereum Authors
+// Copyright 2023 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,21 +14,21 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package types
+//go:build !(arm64 || amd64)
+
+package rawdb
 
 import (
-	"math/big"
+	"errors"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
 )
 
-//go:generate go run ../../rlp/rlpgen -type StateAccount -out gen_account_rlp.go
+// Pebble is unsuported on 32bit architecture
+const PebbleEnabled = false
 
-// StateAccount is the Ethereum consensus representation of accounts.
-// These objects are stored in the main account trie.
-type StateAccount struct {
-	Nonce    uint64
-	Balance  *big.Int
-	Root     common.Hash // merkle root of the storage trie
-	CodeHash []byte
+// NewPebbleDBDatabase creates a persistent key-value database without a freezer
+// moving immutable chain segments into cold storage.
+func NewPebbleDBDatabase(file string, cache int, handles int, namespace string, readonly bool) (ethdb.Database, error) {
+	return nil, errors.New("pebble is not supported on this platform")
 }

@@ -12,33 +12,26 @@
 // GNU Lesser General Public License for more details.
 //
 // You should have received a copy of the GNU Lesser General Public License
-// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>
 
-package vm
+//go:build arm64 || amd64
+
+package rawdb
 
 import (
-	"testing"
-
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/ethdb/pebble"
 )
 
-func FuzzPrecompiledContracts(f *testing.F) {
-	// Create list of addresses
-	var addrs []common.Address
-	for k := range allPrecompiles {
-		addrs = append(addrs, k)
+// Pebble is unsuported on 32bit architecture
+const PebbleEnabled = true
+
+// NewPebbleDBDatabase creates a persistent key-value database without a freezer
+// moving immutable chain segments into cold storage.
+func NewPebbleDBDatabase(file string, cache int, handles int, namespace string, readonly bool) (ethdb.Database, error) {
+	db, err := pebble.New(file, cache, handles, namespace, readonly)
+	if err != nil {
+		return nil, err
 	}
-	f.Fuzz(func(t *testing.T, addr uint8, input []byte) {
-		a := addrs[int(addr)%len(addrs)]
-		p := allPrecompiles[a]
-		gas := p.RequiredGas(input)
-		if gas > 10_000_000 {
-			return
-		}
-		inWant := string(input)
-		RunPrecompiledContract(p, input, gas)
-		if inHave := string(input); inWant != inHave {
-			t.Errorf("Precompiled %v modified input data", a)
-		}
-	})
+	return NewDatabase(db), nil
 }
