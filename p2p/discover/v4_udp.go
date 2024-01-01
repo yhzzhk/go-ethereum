@@ -348,7 +348,7 @@ func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubke
 			}
 			nodes = append(nodes, n)
 		}
-		fmt.Printf("从节点%s收到的节点数:%d", toid.String(), nreceived)
+		// fmt.Printf("从节点%s收到的节点数:%d", toid.String(), nreceived)
 		return false, false
 	})
 
@@ -366,7 +366,7 @@ func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubke
 		if distance >= 0 {
 			if targets[distance] == nil {
 				targets[distance] = &targetnew
-				fmt.Printf("生成的第%d个的公钥:%s, 与通信节点距离为%d.\n", length+1, targetnew.id().GoString(), distance)
+				// fmt.Printf("生成的第%d个的公钥:%s, 与通信节点距离为%d.\n", length+1, targetnew.id().GoString(), distance)
 				length++
 			}
 		}
