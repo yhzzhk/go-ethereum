@@ -23,7 +23,7 @@ import (
 	"time"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/log"
+	// "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/neo4j"
 )
@@ -177,14 +177,14 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 	// 查询成功，将返回的节点列表及与对方节点的邻居关系加进neo4j数据库中
 	ctx := context.Background()
 	cn := neo4j.NewCQLConnection(ctx)
-	fmt.Println("导入neo4j数据库")
+	fmt.Println("导入neo4j数据库", cn.uri)
 
 	//判断目标节点是否在数据库中
 	// fmt.Println("目标节点是:", n.ID().String())
 	exists, err := cn.IfNodeIn(ctx, n.ID().String())
 	if err != nil {
 		// 处理错误
-		fmt.Println("Error:", err)
+		fmt.Println("IfNodeInError:", err)
 	}
 
 	//不在则创建新节点
