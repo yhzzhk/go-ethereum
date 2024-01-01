@@ -130,7 +130,7 @@ func ListenV4(c UDPConn, ln *enode.LocalNode, cfg Config) (*UDPv4, error) {
 	cfg = cfg.withDefaults()
 	closeCtx, cancel := context.WithCancel(context.Background())
 	t := &UDPv4{
-		conn:            newMeteredConn(c),
+		conn:            c,
 		priv:            cfg.PrivateKey,
 		netrestrict:     cfg.NetRestrict,
 		localNode:       ln,
@@ -142,11 +142,32 @@ func ListenV4(c UDPConn, ln *enode.LocalNode, cfg Config) (*UDPv4, error) {
 		log:             cfg.Log,
 	}
 
-	tab, err := newMeteredTable(t, ln.Database(), cfg)
+	// log.Info("---------------i want to see cfg.bootnodes")
+	// for _, n := range cfg.Bootnodes {
+	// 	fmt.Println(n.ID())
+	// }
+	//最后输出了8个节点id
+
+	tab, err := newTable(t, ln.Database(), cfg.Bootnodes, t.log)
 	if err != nil {
 		return nil, err
 	}
+
+	// log.Info("---------------i want to see table")
+	// // i := 1
+	// for i, b := range tab.buckets {
+	// 	fmt.Println(i)
+	// 	for _, n := range b.entries {
+	// 		age := log.Lazy{Fn: func() interface{} { return time.Since(tab.db.LastPongReceived(n.ID(), n.IP())) }}
+	// 		fmt.Println("id", n.ID(), "addr", n.addr(), "age", age)
+	// 	}
+	// 	i++
+	// }
+	//最后输出了17个bucket中的节点id,其中entries有节点，replacements无节点
+
 	t.tab = tab
+
+	//loop是路由表的核心，它负责处理节点表的各种操作，比如节点添加、节点删除、节点刷新等。
 	go tab.loop()
 
 	t.wg.Add(2)
@@ -283,12 +304,18 @@ func (t *UDPv4) lookupSelf() []*enode.Node {
 
 func (t *UDPv4) newRandomLookup(ctx context.Context) *lookup {
 	var target encPubkey
+	// log.Info("--------------------------------------newrandomlookup")
+	// log.Info("原id", target.id().String())
 	crand.Read(target[:])
+	// log.Info("随机生成的id", target.id().String())
 	return t.newLookup(ctx, target)
 }
 
 func (t *UDPv4) newLookup(ctx context.Context, targetKey encPubkey) *lookup {
 	target := enode.ID(crypto.Keccak256Hash(targetKey[:]))
+	// log.Info("=======================================test")
+	// log.Info("keccak256结果", crypto.Keccak256Hash(targetKey[:]).String())
+	// log.Info("target结果", target.String())
 	ekey := v4wire.Pubkey(targetKey)
 	it := newLookup(ctx, t.tab, target, func(n *node) ([]*node, error) {
 		return t.findnode(n.ID(), n.addr(), ekey)
@@ -298,12 +325,17 @@ func (t *UDPv4) newLookup(ctx context.Context, targetKey encPubkey) *lookup {
 
 // findnode sends a findnode request to the given node and waits until
 // the node has sent up to k neighbors.
+// findnode 向给定节点发送 findnode 请求，并等待该节点发送最多 k 个邻居。
 func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubkey) ([]*node, error) {
 	t.ensureBond(toid, toaddr)
 
 	// Add a matcher for 'neighbours' replies to the pending reply queue. The matcher is
 	// active until enough nodes have been received.
-	nodes := make([]*node, 0, bucketSize)
+	//添加一个回复匹配器到待处理的回复队列中。这个回复匹配器将会匹配类型为 v4wire.Neighbors 的回复数据。
+	//当接收到回复时，会将其中的邻居节点信息添加到 nodes 中，并且匹配器会判断是否收到了足够数量的邻居节点，
+	//如果收到足够数量的邻居节点，则回复匹配器会结束。
+
+	nodes := make([]*node, 0)
 	nreceived := 0
 	rm := t.pending(toid, toaddr.IP, v4wire.NeighborsPacket, func(r v4wire.Packet) (matched bool, requestDone bool) {
 		reply := r.(*v4wire.Neighbors)
@@ -316,12 +348,51 @@ func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubke
 			}
 			nodes = append(nodes, n)
 		}
-		return true, nreceived >= bucketSize
+		fmt.Printf("从节点%s收到的节点数:%d", toid.String(), nreceived)
+		return false, false
 	})
-	t.send(toaddr, toid, &v4wire.Findnode{
-		Target:     target,
-		Expiration: uint64(time.Now().Add(expiration).Unix()),
-	})
+
+	var targets [17]*encPubkey // 构造的targets存储列表
+	length := 0
+	for length < 17 {
+		var targetnew encPubkey // 随机生成公钥
+		crand.Read(targetnew[:])
+
+		// 计算随机生成的公钥的id与目标id的距离
+		targetnewid := enode.ID(crypto.Keccak256Hash(targetnew[:]))
+		distance := enode.LogDist(targetnewid, toid) - 239 - 1
+
+		// 判断target中是否已经存在这个距离节点id,如果已经存在就下一次，如果不存在就存到相应位置
+		if distance >= 0 {
+			if targets[distance] == nil {
+				targets[distance] = &targetnew
+				fmt.Printf("生成的第%d个的公钥:%s, 与通信节点距离为%d.\n", length+1, targetnew.id().GoString(), distance)
+				length++
+			}
+		}
+
+		// fmt.Printf("生成的第%d个的公钥:%s, 与通信节点距离为%d.\n", i, targetnew.id().GoString(), distance)
+		// fmt.Printf("testa: %s, testb: %s, 距离为%d \n", stra, strb, distance)
+		// targets = append(targets, &targetnew)
+	}
+
+	for _, target := range targets {
+		// targetid := enode.ID(crypto.Keccak256Hash(target[:]))
+		// a, _ := hex.DecodeString(targetid.GoString())
+		// b, _ := hex.DecodeString(toid.GoString())
+		// distance := enode.LogDist(a, b)
+		// log.Info("发送findnode包", "toid", toid, "targetid", targetid.GoString(), "distance", distance)
+		t.send(toaddr, toid, &v4wire.Findnode{
+			Target:     v4wire.Pubkey(*target),
+			Expiration: uint64(time.Now().Add(expiration).Unix()),
+		})
+	}
+
+	// t.send(toaddr, toid, &v4wire.Findnode{
+	// 	Target:     target,
+	// 	Expiration: uint64(time.Now().Add(expiration).Unix()),
+	// })
+
 	// Ensure that callers don't see a timeout if the node actually responded. Since
 	// findnode can receive more than one neighbors response, the reply matcher will be
 	// active until the remote node sends enough nodes. If the remote end doesn't have
@@ -643,12 +714,12 @@ type packetHandlerV4 struct {
 func (t *UDPv4) verifyPing(h *packetHandlerV4, from *net.UDPAddr, fromID enode.ID, fromKey v4wire.Pubkey) error {
 	req := h.Packet.(*v4wire.Ping)
 
-	if v4wire.Expired(req.Expiration) {
-		return errExpired
-	}
 	senderKey, err := v4wire.DecodePubkey(crypto.S256(), fromKey)
 	if err != nil {
 		return err
+	}
+	if v4wire.Expired(req.Expiration) {
+		return errExpired
 	}
 	h.senderKey = senderKey
 	return nil
