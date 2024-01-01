@@ -23,7 +23,7 @@ import (
 	"time"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/log"
+	// "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/neo4j"
 )
