@@ -36,6 +36,10 @@ func NewCQLConnection(ctx context.Context) *cqlconnection {
 	return cn
 }
 
+func(cn *cqlconnection) GetURI()(string){
+	return cn.uri
+}
+
 func (cn *cqlconnection) CreatNode(ctx context.Context, id string, ip string) (string, error) {
 	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(cn.username, cn.password, ""))
 	if err != nil {
