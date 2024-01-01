@@ -3,6 +3,7 @@ package neo4j
 import (
 	"context"
 	"os"
+	"fmt"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -27,12 +28,12 @@ type cqlconnection struct {
 }
 
 func NewCQLConnection(ctx context.Context) *cqlconnection {
-
 	cn := &cqlconnection{
 		uri:      uri,
 		username: username,
 		password: password,
 	}
+	fmt.Println(uri)
 	return cn
 }
 
