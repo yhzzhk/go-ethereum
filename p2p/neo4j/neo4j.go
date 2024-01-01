@@ -33,7 +33,7 @@ func NewCQLConnection(ctx context.Context) *cqlconnection {
 		username: username,
 		password: password,
 	}
-	fmt.println(uri)
+	// fmt.println(uri)
 	return cn
 }
 
