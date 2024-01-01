@@ -148,7 +148,7 @@ func ListenV4(c UDPConn, ln *enode.LocalNode, cfg Config) (*UDPv4, error) {
 	// }
 	//最后输出了8个节点id
 
-	tab, err := newTable(t, ln.Database(), cfg.Bootnodes, t.log)
+	tab, err := newTable(t, ln.Database(), cfg)
 	if err != nil {
 		return nil, err
 	}
