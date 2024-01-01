@@ -16,10 +16,10 @@ import (
 //
 // )
 var (
-	uri      = os.Getenv("NEO4J_URI")
+	uri      = "bolt://neo4j:7687" // 直接使用服务名称
 	username = os.Getenv("NEO4J_USERNAME")
 	password = os.Getenv("NEO4J_PASSWORD")
-)
+  )
 
 type cqlconnection struct {
 	uri      string
