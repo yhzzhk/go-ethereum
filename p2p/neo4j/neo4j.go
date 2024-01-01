@@ -2,7 +2,7 @@ package neo4j
 
 import (
 	"context"
-	"os"
+	// "os"
 	// "fmt"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
