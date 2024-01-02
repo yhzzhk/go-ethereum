@@ -177,7 +177,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 	// 查询成功，将返回的节点列表及与对方节点的邻居关系加进neo4j数据库中
 	ctx := context.Background()
 	cn := neo4j.NewCQLConnection(ctx)
-	fmt.Println("导入neo4j数据库", cn.GetURI())
+	// fmt.Println("导入neo4j数据库", cn.GetURI())
 
 	//判断目标节点是否在数据库中
 	// fmt.Println("目标节点是:", n.ID().String())
@@ -193,7 +193,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		id := n.ID().String()
 		ip := n.IP().String()
 		rst, _ := cn.CreatNode(ctx, id, ip)
-		fmt.Println("创建目标节点", rst)
+		// fmt.Println("创建目标节点", rst)
 	}
 
 	// 对每一个邻居节点判断是否在数据库中，在则直接添加关系，不在则创建节点后添加关系
@@ -214,11 +214,11 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		}
 		if !exists {
 			rst, _ := cn.CreatNode(ctx, id, ip)
-			fmt.Println("创建邻居节点", rst)
+			// fmt.Println("创建邻居节点", rst)
 		}
 		rst, _ := cn.CreateEdge(ctx, n.ID().String(), id, distancestr)
 		// fmt.Printf("创建节点关系,距离为%d", distance)
-		fmt.Println("创建节点关系", rst)
+		// fmt.Println("创建节点关系", rst)
 	}
 
 	// Grab as many nodes as possible. Some of them might not be alive anymore, but we'll
