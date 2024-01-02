@@ -192,7 +192,7 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		// log.Info("-------------不存在")
 		id := n.ID().String()
 		ip := n.IP().String()
-		rst, _ := cn.CreatNode(ctx, id, ip)
+		_, _ := cn.CreatNode(ctx, id, ip)
 		// fmt.Println("创建目标节点", rst)
 	}
 
@@ -213,10 +213,10 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 			fmt.Println("Error:", err)
 		}
 		if !exists {
-			rst, _ := cn.CreatNode(ctx, id, ip)
+			_, _ := cn.CreatNode(ctx, id, ip)
 			// fmt.Println("创建邻居节点", rst)
 		}
-		rst, _ := cn.CreateEdge(ctx, n.ID().String(), id, distancestr)
+		_, _ := cn.CreateEdge(ctx, n.ID().String(), id, distancestr)
 		// fmt.Printf("创建节点关系,距离为%d", distance)
 		// fmt.Println("创建节点关系", rst)
 	}
