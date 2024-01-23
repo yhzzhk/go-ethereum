@@ -19,6 +19,7 @@ package p2p
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
 	"errors"
@@ -33,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/neo4j"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
@@ -210,6 +212,9 @@ type Server struct {
 
 	// State of run loop and listenLoop.
 	inboundHistory expHeap
+
+	// 添加的extendedNode存储
+	extendedNodeStorage *ExtendedNodeStorage
 }
 
 type peerOpFunc func(map[enode.ID]*Peer)
@@ -463,6 +468,8 @@ func (srv *Server) Start() (err error) {
 	if srv.NoDial && srv.ListenAddr == "" {
 		srv.log.Warn("P2P server will be useless, neither dialing nor listening")
 	}
+	// 初始化 ExtendedNodeStorage
+	srv.extendedNodeStorage = NewExtendedNodeStorage()
 
 	// static fields
 	if srv.PrivateKey == nil {
@@ -608,7 +615,7 @@ func (srv *Server) setupDialScheduler() {
 	if config.dialer == nil {
 		config.dialer = tcpDialer{&net.Dialer{Timeout: defaultDialTimeout}}
 	}
-	srv.dialsched = newDialScheduler(config, srv.discmix, srv.SetupConn)
+	srv.dialsched = newDialScheduler(config, srv.discmix, srv.SetupConn, srv.extendedNodeStorage)
 	for _, n := range srv.StaticNodes {
 		srv.dialsched.addStatic(n)
 	}
@@ -766,6 +773,40 @@ running:
 				// The handshakes are done and it passed all checks.
 				p := srv.launchPeer(c)
 				peers[c.node.ID()] = p
+
+				// 根据 c.flags 设置 is_dyndial 和 is_inbound
+				var isDyndial, isInbound bool
+				if p.Dyndial() {
+					isDyndial = true
+				} else if p.Inbound() {
+					isInbound = true
+				}
+
+				// 创建 cqlconnection 实例
+				ctx := context.Background()
+				conn := neo4j.NewCQLConnection(ctx)
+
+				// 构建不包含 flags 的属性映射
+				properties := map[string]interface{}{
+					"id":             fmt.Sprintf("%v", p.ID()),
+					"fullname":       p.Fullname(),
+					"ip":             fmt.Sprintf("%v", p.rw.node.IP()),
+					"udp_port":       fmt.Sprintf("%v", p.rw.node.UDP()),
+					"tcp_port":       fmt.Sprintf("%v", p.rw.node.TCP()),
+					"caps":           fmt.Sprintf("%v", p.rw.caps),
+					"last_time":      time.Now().Format(time.RFC3339),
+					"is_dyndial":     isDyndial,
+					"is_inbound":     isInbound,
+				}
+
+				// 添加或更新节点信息
+				re, err := conn.UpsertNode(ctx, p.ID().String(), properties)
+				if err != nil {
+					fmt.Println("Error upserting node:", err)
+				}else{
+					fmt.Println("addpeer的upsertnode结果:", re)
+				}
+
 				srv.log.Debug("Adding p2p peer", "peercount", len(peers), "id", p.ID(), "conn", c.flags, "addr", p.RemoteAddr(), "name", p.Name())
 				srv.dialsched.peerAdded(c)
 				if p.Inbound() {
@@ -775,6 +816,7 @@ running:
 					dialSuccessMeter.Mark(1)
 				}
 				activePeerGauge.Inc(1)
+
 			}
 			c.cont <- err
 
@@ -782,12 +824,15 @@ running:
 			// A peer disconnected.
 			d := common.PrettyDuration(mclock.Now() - pd.created)
 			delete(peers, pd.ID())
+
 			srv.log.Debug("Removing p2p peer", "peercount", len(peers), "id", pd.ID(), "duration", d, "req", pd.requested, "err", pd.err)
 			srv.dialsched.peerRemoved(pd.rw)
 			if pd.Inbound() {
 				inboundCount--
 			}
 			activePeerGauge.Dec(1)
+
+			
 		}
 	}
 
@@ -988,6 +1033,14 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 	phs, err := c.doProtoHandshake(srv.ourHandshake)
 	if err != nil {
 		clog.Trace("Failed p2p handshake", "err", err)
+
+		// 更新extendedNodeSrorage，如果too many peers，则加入之后继续dail。
+		if err.Error() == "too many peers" {
+			srv.extendedNodeStorage.AddOrUpdateNode(c.node, false)
+			fmt.Println("rlpx握手遇到too many peers错误, 更新extendednodestorage节点个数:", srv.extendedNodeStorage.NodeCount())
+		}
+
+
 		return fmt.Errorf("%w: %v", errProtoHandshakeError, err)
 	}
 	if id := c.node.ID(); !bytes.Equal(crypto.Keccak256(phs.ID), id[:]) {
@@ -1050,6 +1103,22 @@ func (srv *Server) runPeer(p *Peer) {
 
 	// Run the per-peer main loop.
 	remoteRequested, err := p.run()
+
+	// 更新extendedNodeSrorage
+	switch err.Error() {
+	case "node discovery completed":
+		// 完成了 eth 握手，更新节点信息
+		srv.extendedNodeStorage.AddOrUpdateNode(p.rw.node, true)
+		fmt.Println("完成了eth握手, 更新extendednodestorage节点个数:", srv.extendedNodeStorage.NodeCount())
+
+	case "too many peers":
+		// 对于 "too many peers" 错误，不执行任何操作
+
+	default:
+		// 对于其他错误，删除节点信息
+		srv.extendedNodeStorage.RemoveNode(p.rw.node)
+		fmt.Println("未完成eth握手, 删除extendednodestorage节点个数:", srv.extendedNodeStorage.NodeCount())
+	}
 
 	// Announce disconnect on the main loop to update the peer set.
 	// The main loop waits for existing peers to be sent on srv.delpeer

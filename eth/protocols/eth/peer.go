@@ -20,9 +20,11 @@ import (
 	"math/big"
 	"math/rand"
 	"sync"
+	"fmt"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/forkid"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -74,6 +76,9 @@ type Peer struct {
 
 	head common.Hash // Latest advertised head block hash
 	td   *big.Int    // Latest advertised head block total difficulty
+	// 添加一些peer属性用来记录
+	networkID uint64    // Ethereum network ID
+	forkID    forkid.ID // Fork ID
 
 	knownBlocks     *knownCache            // Set of block hashes known to be known by this peer
 	queuedBlocks    chan *blockPropagation // Queue of blocks to broadcast to the peer
@@ -139,12 +144,22 @@ func (p *Peer) Version() uint {
 }
 
 // Head retrieves the current head hash and total difficulty of the peer.
+// func (p *Peer) Head() (hash common.Hash, td *big.Int) {
+// 	p.lock.RLock()
+// 	defer p.lock.RUnlock()
+
+// 	copy(hash[:], p.head[:])
+// 	return hash, new(big.Int).Set(p.td)
+// }
 func (p *Peer) Head() (hash common.Hash, td *big.Int) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
 	copy(hash[:], p.head[:])
-	return hash, new(big.Int).Set(p.td)
+	if p.td != nil {
+		td = new(big.Int).Set(p.td)
+	}
+	return hash, td
 }
 
 // SetHead updates the head hash and total difficulty of the peer.
@@ -468,6 +483,25 @@ func (p *Peer) RequestTxs(hashes []common.Hash) error {
 		RequestId:                    id,
 		GetPooledTransactionsRequest: hashes,
 	})
+}
+
+func (p *Peer) GetPeerInfo() map[string]interface{} {
+	peerInfo := make(map[string]interface{})
+
+    // Retrieve information from the peer
+    peerInfo["id"] = fmt.Sprintf("%v", p.ID())
+    peerInfo["version"] = fmt.Sprintf("%v", p.Version())
+
+    // Get head and total difficulty
+    head, td := p.Head()
+	peerInfo["head"] = fmt.Sprintf("%v", head.Hex())
+	peerInfo["totalDifficulty"] = fmt.Sprintf("%v", td.String())
+
+    // Get network ID and fork ID
+    peerInfo["networkID"] = fmt.Sprintf("%v", p.networkID)
+    peerInfo["forkID"] = fmt.Sprintf("%v", p.forkID)
+
+    return peerInfo
 }
 
 // knownCache is a cache for known hashes.

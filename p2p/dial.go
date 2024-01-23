@@ -123,6 +123,12 @@ type dialScheduler struct {
 	// for logStats
 	lastStatsLog     mclock.AbsTime
 	doneSinceLastLog int
+
+	// 新增字段
+	addExtendedCh chan *enode.Node // 添加 extendedNodeStorage 中的节点
+	extendedTimer *time.Ticker     // 定时器
+
+	extendedNodeStorage *ExtendedNodeStorage
 }
 
 type dialSetupFunc func(net.Conn, connFlag, *enode.Node) error
@@ -158,12 +164,16 @@ func (cfg dialConfig) withDefaults() dialConfig {
 	return cfg
 }
 
-func newDialScheduler(config dialConfig, it enode.Iterator, setupFunc dialSetupFunc) *dialScheduler {
+func newDialScheduler(config dialConfig, it enode.Iterator, setupFunc dialSetupFunc, extStorage *ExtendedNodeStorage) *dialScheduler {
 	cfg := config.withDefaults()
 	d := &dialScheduler{
 		dialConfig:   cfg,
 		historyTimer: mclock.NewAlarm(cfg.clock),
 		setupFunc:    setupFunc,
+		//引入extendednode
+		extendedNodeStorage: extStorage,
+		addExtendedCh:       make(chan *enode.Node),
+
 		dialing:      make(map[enode.ID]*dialTask),
 		static:       make(map[enode.ID]*dialTask),
 		peers:        make(map[enode.ID]struct{}),
@@ -173,13 +183,41 @@ func newDialScheduler(config dialConfig, it enode.Iterator, setupFunc dialSetupF
 		remStaticCh:  make(chan *enode.Node),
 		addPeerCh:    make(chan *conn),
 		remPeerCh:    make(chan *conn),
+		
 	}
 	d.lastStatsLog = d.clock.Now()
 	d.ctx, d.cancel = context.WithCancel(context.Background())
+	// extendednode定时验证服务
+	d.startExtendedNodeDialer()
 	d.wg.Add(2)
 	go d.readNodes(it)
 	go d.loop(it)
 	return d
+}
+
+// 新增定时任务启动逻辑
+func (d *dialScheduler) startExtendedNodeDialer() {
+	d.extendedTimer = time.NewTicker(30 * time.Minute)
+	go func() {
+		for {
+			select {
+			case <-d.extendedTimer.C:
+				count := d.extendedNodeStorage.CountHandshakedNodes()
+				fmt.Printf("extendednode验证开始, %d个eth节点, %d个未知节点\n", count, d.extendedNodeStorage.NodeCount()-count)
+				// 获取 extendedNodeStorage 中的节点并发送到 addExtendedCh
+				nodes := d.extendedNodeStorage.GetEarliestConnectedEnodes(5000) // 实现此函数以获取节点
+				// fmt.Println("extendednodestorage中节点个数:", len(nodes))
+				for _, node := range nodes {
+					// fmt.Println("向addextendedch通道传入节点:", node.ID())
+					d.addExtendedCh <- node
+				}
+			case <-d.ctx.Done():
+				fmt.Println("extendednode验证完成")
+				d.extendedTimer.Stop()
+				return
+			}
+		}
+	}()
 }
 
 // stop shuts down the dialer, canceling all current dial tasks.
@@ -244,6 +282,15 @@ loop:
 			if err := d.checkDial(node); err != nil {
 				d.log.Trace("Discarding dial candidate", "id", node.ID(), "ip", node.IP(), "reason", err)
 			} else {
+				d.startDial(newDialTask(node, dynDialedConn))
+			}
+		// 处理 extendedNodeStorage 中的节点
+		case node := <-d.addExtendedCh:
+			// fmt.Println("addextendedch传入节点")
+			if err := d.checkDial(node); err != nil {
+				d.log.Trace("extendednode节点验证失败", "id", node.ID(), "ip", node.IP(), "reason", err)
+			} else {
+				// fmt.Println("开始验证extendednode中节点:", node.ID())
 				d.startDial(newDialTask(node, dynDialedConn))
 			}
 
@@ -390,9 +437,9 @@ func (d *dialScheduler) checkDial(n *enode.Node) error {
 	if d.netRestrict != nil && !d.netRestrict.Contains(n.IP()) {
 		return errNetRestrict
 	}
-	if d.history.contains(string(n.ID().Bytes())) {
-		return errRecentlyDialed
-	}
+	// if d.history.contains(string(n.ID().Bytes())) {
+	// 	return errRecentlyDialed
+	// }
 	return nil
 }
 

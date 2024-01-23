@@ -17,9 +17,12 @@
 package eth
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,6 +43,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/neo4j"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 )
@@ -349,25 +353,79 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	forkID := forkid.NewID(h.chain.Config(), genesis, number, head.Time)
 	if err := peer.Handshake(h.networkID, td, hash, genesis.Hash(), forkID, h.forkFilter); err != nil {
 		peer.Log().Debug("Ethereum handshake failed", "err", err)
-		return err
-	}
-	reject := false // reserved peer slots
-	if h.snapSync.Load() {
-		if snap == nil {
-			// If we are running snap-sync, we want to reserve roughly half the peer
-			// slots for peers supporting the snap protocol.
-			// The logic here is; we only allow up to 5 more non-snap peers than snap-peers.
-			if all, snp := h.peers.len(), h.peers.snapLen(); all-snp > snp+5 {
-				reject = true
+		
+		// 调用 GetPeerInfo 函数获取信息
+		peerInfo := peer.GetPeerInfo()
+
+		// 使用 fmt.Println 打印输出
+		fmt.Println("Peer Information:")
+		fmt.Println("ID:", peerInfo["id"])
+		fmt.Println("Version:", peerInfo["version"])
+		fmt.Println("Head:", peerInfo["head"])
+		fmt.Println("Total Difficulty:", peerInfo["totalDifficulty"])
+		fmt.Println("Network ID:", peerInfo["networkID"])
+		fmt.Println("Fork ID:", peerInfo["forkID"])
+
+		// 停顿5s确保rlpx那里的neo4j已经写入完成
+		time.Sleep(5 * time.Second)
+		// 添加节点信息到neo4j数据库
+		// 创建 cqlconnection 实例
+		ctx := context.Background()
+		conn := neo4j.NewCQLConnection(ctx)
+		// 检查错误消息
+		errStr := err.Error()
+		if strings.Contains(errStr, "network ID mismatch") ||
+			strings.Contains(errStr, "fork ID rejected") ||
+			strings.Contains(errStr, "node discovery completed") {
+
+			// UpsertNode 逻辑
+			isHandshakeComplete := false
+			if strings.Contains(errStr, "network ID mismatch") || strings.Contains(errStr, "fork ID rejected") {
+    			isHandshakeComplete = false
+			} else if strings.Contains(errStr, "node discovery completed") {
+    			isHandshakeComplete = true
+			}
+
+			// UpsertNode 逻辑
+			properties := map[string]interface{}{
+    			"id":                   peerInfo["id"],
+    			"version":              peerInfo["version"],
+    			"head":                 peerInfo["head"],
+    			"totalDifficulty":      peerInfo["totalDifficulty"],
+    			"networkID":            peerInfo["networkID"],
+    			"forkID":               peerInfo["forkID"],
+    			"last_time":            time.Now().Format(time.RFC3339),
+    			"is_eth_handshake":     true,
+    			"is_eth_handshake_complete": isHandshakeComplete,
+			}
+			if _, err := conn.UpsertNode(ctx, peerInfo["id"].(string), properties); err != nil {
+				fmt.Println("Error upserting node:", err)
+			}
+		} else {
+			// DeleteNode 逻辑
+			if err := conn.DeleteNode(ctx, peerInfo["id"].(string)); err != nil {
+				fmt.Println("Error deleting node:", err)
 			}
 		}
+		return err
 	}
-	// Ignore maxPeers if this is a trusted peer
-	if !peer.Peer.Info().Network.Trusted {
-		if reject || h.peers.len() >= h.maxPeers {
-			return p2p.DiscTooManyPeers
-		}
-	}
+	// reject := false // reserved peer slots
+	// if h.snapSync.Load() {
+	// 	if snap == nil {
+	// 		// If we are running snap-sync, we want to reserve roughly half the peer
+	// 		// slots for peers supporting the snap protocol.
+	// 		// The logic here is; we only allow up to 5 more non-snap peers than snap-peers.
+	// 		if all, snp := h.peers.len(), h.peers.snapLen(); all-snp > snp+5 {
+	// 			reject = true
+	// 		}
+	// 	}
+	// }
+	// // Ignore maxPeers if this is a trusted peer
+	// if !peer.Peer.Info().Network.Trusted {
+	// 	if reject || h.peers.len() >= h.maxPeers {
+	// 		return p2p.DiscTooManyPeers
+	// 	}
+	// }
 	peer.Log().Debug("Ethereum peer connected", "name", peer.Name())
 
 	// Register the peer locally

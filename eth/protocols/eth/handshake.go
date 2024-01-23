@@ -62,21 +62,28 @@ func (p *Peer) Handshake(network uint64, td *big.Int, head common.Hash, genesis 
 		case err := <-errc:
 			if err != nil {
 				markError(p, err)
+				p.td, p.head = status.TD, status.Head
+				p.networkID, p.forkID = status.NetworkID, status.ForkID
 				return err
 			}
 		case <-timeout.C:
 			markError(p, p2p.DiscReadTimeout)
+			p.td, p.head = status.TD, status.Head
+			p.networkID, p.forkID = status.NetworkID, status.ForkID
 			return p2p.DiscReadTimeout
 		}
 	}
 	p.td, p.head = status.TD, status.Head
+	p.networkID, p.forkID = status.NetworkID, status.ForkID
 
 	// TD at mainnet block #7753254 is 76 bits. If it becomes 100 million times
 	// larger, it will still fit within 100 bits
 	if tdlen := p.td.BitLen(); tdlen > 100 {
 		return fmt.Errorf("too large total difficulty: bitlen %d", tdlen)
 	}
-	return nil
+	// return nil
+	// 如果握手成功，表示已完成节点发现，可以返回一个错误，终止与对等点的通信
+	return errors.New("node discovery completed")
 }
 
 // readStatus reads the remote handshake message.
@@ -97,6 +104,9 @@ func (p *Peer) readStatus(network uint64, status *StatusPacket, genesis common.H
 	}
 	if status.NetworkID != network {
 		return fmt.Errorf("%w: %d (!= %d)", errNetworkIDMismatch, status.NetworkID, network)
+	}
+	if status.NetworkID == network {
+		fmt.Println("networkid匹配")
 	}
 	if uint(status.ProtocolVersion) != p.version {
 		return fmt.Errorf("%w: %d (!= %d)", errProtocolVersionMismatch, status.ProtocolVersion, p.version)

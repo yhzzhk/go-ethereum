@@ -225,6 +225,10 @@ func (p *Peer) Inbound() bool {
 	return p.rw.is(inboundConn)
 }
 
+func (p *Peer) Dyndial() bool {
+	return p.rw.is(dynDialedConn)
+}
+
 func newPeer(log log.Logger, conn *conn, protocols []Protocol) *Peer {
 	protomap := matchProtocols(protocols, conn.caps, conn)
 	p := &Peer{

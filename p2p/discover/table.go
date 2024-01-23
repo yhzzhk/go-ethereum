@@ -43,7 +43,7 @@ import (
 const (
 	alpha           = 3  // Kademlia concurrency factor
 	bucketSize      = 16 // Kademlia bucket size
-	maxReplacements = 10 // Size of per-bucket replacement list
+	maxReplacements = 100 // Size of per-bucket replacement list
 
 	// We keep buckets for the upper 1/15 of distances because
 	// it's very unlikely we'll ever encounter a node that's closer.
@@ -607,15 +607,15 @@ func (tab *Table) addIP(b *bucket, ip net.IP) bool {
 	if netutil.IsLAN(ip) {
 		return true
 	}
-	if !tab.ips.Add(ip) {
-		tab.log.Debug("IP exceeds table limit", "ip", ip)
-		return false
-	}
-	if !b.ips.Add(ip) {
-		tab.log.Debug("IP exceeds bucket limit", "ip", ip)
-		tab.ips.Remove(ip)
-		return false
-	}
+	// if !tab.ips.Add(ip) {
+	// 	tab.log.Debug("IP exceeds table limit", "ip", ip)
+	// 	return false
+	// }
+	// if !b.ips.Add(ip) {
+	// 	tab.log.Debug("IP exceeds bucket limit", "ip", ip)
+	// 	tab.ips.Remove(ip)
+	// 	return false
+	// }
 	return true
 }
 
