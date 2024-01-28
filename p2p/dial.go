@@ -29,6 +29,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/mclock"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/neo4j"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 )
@@ -519,11 +520,35 @@ func (t *dialTask) run(d *dialScheduler) {
 	}
 
 	err := t.dial(d, t.dest)
+	nodeid := t.dest.ID().String()
+	nodeInfo := d.extendedNodeStorage.GetNode(nodeid)
 	if err != nil {
 		// For static nodes, resolve one more time if dialing fails.
 		if _, ok := err.(*dialError); ok && t.flags&staticDialedConn != 0 {
 			if t.resolve(d) {
 				t.dial(d, t.dest)
+			}
+		}
+		// 如果失败，且节点位于extendednodestorage中，且是eth节点，则在score里扣分。
+		if nodeInfo != nil && nodeInfo.Handshaked{
+			d.extendedNodeStorage.UpdateNodeScore(t.dest, -1)
+			fmt.Println("已eth节点dial失败:", t.dest.ID().String())
+		}
+	}else {
+		//如果成功，且节点位于extendednodestorage中，且是eth节点，则在neo4j中更新last_time信息
+		if nodeInfo != nil && nodeInfo.Handshaked {
+			fmt.Println("已eth节点dial成功, 更新lastime信息:", t.dest.ID().String())
+			ctx := context.Background()
+			conn := neo4j.NewCQLConnection(ctx)
+			properties := map[string]interface{}{
+				// "id":        fmt.Sprintf("%v", p.ID()),
+				"last_time": time.Now().Format(time.RFC3339),
+			}
+			re, err := conn.UpsertNode(ctx, nodeid, properties)
+			if err != nil {
+				fmt.Println("已eth节点更新lastime信息失败:", err)
+			}else{
+				fmt.Println("已eth节点更新lastime信息:", re)
 			}
 		}
 	}

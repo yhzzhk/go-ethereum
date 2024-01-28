@@ -13,6 +13,7 @@ type ExtendedNodeInfo struct {
 	Node        *enode.Node // 节点信息
 	LastConnect time.Time   // 上一次成功连接的时间
 	Handshaked  bool        // 是否完成了eth握手
+	Score       int         // 跟踪节点的健康状况分数
 }
 
 // ExtendedNodeStorage 用于存储ExtendedNodeInfo的内存结构
@@ -41,6 +42,18 @@ func (s *ExtendedNodeStorage) AddOrUpdateNode(node *enode.Node, handshaked bool)
 	}
 	info.LastConnect = time.Now()
 	info.Handshaked = handshaked
+	info.Score += 2
+}
+
+// UpdateNodeScore 更新指定节点的分数
+func (s *ExtendedNodeStorage) UpdateNodeScore(node *enode.Node, delta int) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	id := node.ID().String()
+	if info, exists := s.nodes[id]; exists {
+		info.Score += delta
+	}
 }
 
 // GetNode 返回与给定ID关联的节点信息，如果找不到则返回nil
