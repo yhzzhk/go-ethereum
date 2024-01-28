@@ -785,10 +785,12 @@ running:
 				// 创建 cqlconnection 实例
 				ctx := context.Background()
 				conn := neo4j.NewCQLConnection(ctx)
+				services := "singapore-04"
 
 				// 构建不包含 flags 的属性映射
 				properties := map[string]interface{}{
 					"id":             fmt.Sprintf("%v", p.ID()),
+					"enode":          fmt.Sprintf("%v", p.Info().Enode),
 					"fullname":       p.Fullname(),
 					"ip":             fmt.Sprintf("%v", p.rw.node.IP()),
 					"udp_port":       fmt.Sprintf("%v", p.rw.node.UDP()),
@@ -797,6 +799,7 @@ running:
 					"last_time":      time.Now().Format(time.RFC3339),
 					"is_dyndial":     isDyndial,
 					"is_inbound":     isInbound,
+					"services":       services,
 				}
 
 				// 添加或更新节点信息
