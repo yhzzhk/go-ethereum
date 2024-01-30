@@ -566,7 +566,8 @@ func (srv *Server) setupDiscovery() error {
 			return err
 		}
 		srv.ntab = ntab
-		srv.discmix.AddSource(ntab.RandomNodes())
+		// 注释下面一行，可以保证程序只进行udp节点拓扑发现。
+		// srv.discmix.AddSource(ntab.RandomNodes())
 	}
 	if srv.DiscoveryV5 {
 		cfg := discover.Config{
