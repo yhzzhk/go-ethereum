@@ -37,12 +37,20 @@ func (s *ExtendedNodeStorage) AddOrUpdateNode(node *enode.Node, handshaked bool)
 	id := node.ID().String()
 	info, exists := s.nodes[id]
 	if !exists {
-		info = &ExtendedNodeInfo{Node: node}
+		// 如果是新节点，初始化score为5
+		info = &ExtendedNodeInfo{
+			Node:   node,
+			Score:  5,
+		}
 		s.nodes[id] = info
+	} else {
+		// 如果节点已存在且handshaked为true，则score加5
+		if handshaked {
+			info.Score += 5
+		}
 	}
 	info.LastConnect = time.Now()
 	info.Handshaked = handshaked
-	info.Score += 2
 }
 
 // UpdateNodeScore 更新指定节点的分数
@@ -151,4 +159,30 @@ func (s *ExtendedNodeStorage) CountHandshakedNodes() int {
 		}
 	}
 	return count
+}
+
+// CountNegativeScoreNodes 返回 score 小于 0 的节点数量
+func (s *ExtendedNodeStorage) CountNegativeScoreNodes() int {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	count := 0
+	for _, info := range s.nodes {
+		if info.Score < 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// RemoveNegativeScoreNodes 删除所有score小于0的节点
+func (s *ExtendedNodeStorage) RemoveNegativeScoreNodes() {
+    s.lock.Lock() // 获取写锁
+    defer s.lock.Unlock() // 完成后释放写锁
+
+    for id, info := range s.nodes {
+        if info.Score < 0 {
+            delete(s.nodes, id) // 删除score小于0的节点
+        }
+    }
 }

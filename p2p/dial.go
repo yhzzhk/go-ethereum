@@ -198,18 +198,17 @@ func newDialScheduler(config dialConfig, it enode.Iterator, setupFunc dialSetupF
 
 // 新增定时任务启动逻辑
 func (d *dialScheduler) startExtendedNodeDialer() {
-	d.extendedTimer = time.NewTicker(30 * time.Minute)
+	d.extendedTimer = time.NewTicker(15 * time.Minute)
 	go func() {
 		for {
 			select {
 			case <-d.extendedTimer.C:
 				count := d.extendedNodeStorage.CountHandshakedNodes()
 				fmt.Printf("extendednode验证开始, %d个eth节点, %d个未知节点\n", count, d.extendedNodeStorage.NodeCount()-count)
-				// 获取 extendedNodeStorage 中的节点并发送到 addExtendedCh
-				nodes := d.extendedNodeStorage.GetEarliestConnectedEnodes(5000) // 实现此函数以获取节点
-				// fmt.Println("extendednodestorage中节点个数:", len(nodes))
+				fmt.Println("extendednode中分数低于0的节点个数:", d.extendedNodeStorage.CountNegativeScoreNodes())
+				d.extendedNodeStorage.RemoveNegativeScoreNodes() // 删除分数低于0的节点
+				nodes := d.extendedNodeStorage.GetEarliestConnectedEnodes(5000)
 				for _, node := range nodes {
-					// fmt.Println("向addextendedch通道传入节点:", node.ID())
 					d.addExtendedCh <- node
 				}
 			case <-d.ctx.Done():
