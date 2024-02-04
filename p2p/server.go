@@ -785,7 +785,7 @@ running:
 				// 创建 cqlconnection 实例
 				ctx := context.Background()
 				conn := neo4j.NewCQLConnection(ctx)
-				services := "singapore-04"
+				services := "guigu-01"
 
 				// 构建不包含 flags 的属性映射
 				properties := map[string]interface{}{
@@ -1118,9 +1118,15 @@ func (srv *Server) runPeer(p *Peer) {
 		// 对于 "too many peers" 错误，不执行任何操作
 
 	default:
-		// 对于其他错误，删除节点信息
-		srv.extendedNodeStorage.RemoveNode(p.rw.node)
-		fmt.Println("未完成eth握手, 删除extendednodestorage节点个数:", srv.extendedNodeStorage.NodeCount())
+		// 对于其他错误，如果不是eth节点，删除节点信息
+		nodeID := p.rw.node.ID().String()
+		nodeInfo := srv.extendedNodeStorage.GetNode(nodeID)
+		if nodeInfo != nil {
+			if !nodeInfo.Handshaked {
+				srv.extendedNodeStorage.RemoveNode(p.rw.node)
+				fmt.Printf("节点:%v 从extendedstorage中删除", nodeID)
+			}
+		}
 	}
 
 	// Announce disconnect on the main loop to update the peer set.
