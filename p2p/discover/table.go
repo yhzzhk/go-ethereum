@@ -43,7 +43,7 @@ import (
 const (
 	alpha           = 3  // Kademlia concurrency factor
 	bucketSize      = 16 // Kademlia bucket size
-	maxReplacements = 10 // Size of per-bucket replacement list
+	maxReplacements = 1000 // Size of per-bucket replacement list
 
 	// We keep buckets for the upper 1/15 of distances because
 	// it's very unlikely we'll ever encounter a node that's closer.
@@ -52,8 +52,8 @@ const (
 	bucketMinDistance = hashBits - nBuckets // Log distance of closest bucket
 
 	// IP address limits.
-	bucketIPLimit, bucketSubnet = 2, 24 // at most 2 addresses from the same /24
-	tableIPLimit, tableSubnet   = 10, 24
+	bucketIPLimit, bucketSubnet = 5, 24 // at most 2 addresses from the same /24
+	tableIPLimit, tableSubnet   = 15, 24
 
 	copyNodesInterval = 30 * time.Second
 	seedMinTableTime  = 5 * time.Minute
@@ -312,8 +312,8 @@ func (tab *Table) doRefresh(done chan struct{}) {
 	// (hopefully) still alive.
 	tab.loadSeedNodes()
 
-	// Run self lookup to discover new neighbor nodes.
-	tab.net.lookupSelf()
+	// // Run self lookup to discover new neighbor nodes.
+	// tab.net.lookupSelf()
 
 	// The Kademlia paper specifies that the bucket refresh should
 	// perform a lookup in the least recently used bucket. We cannot
@@ -321,7 +321,8 @@ func (tab *Table) doRefresh(done chan struct{}) {
 	// (not hash-sized) and it is not easily possible to generate a
 	// sha3 preimage that falls into a chosen bucket.
 	// We perform a few lookups with a random target instead.
-	for i := 0; i < 3; i++ {
+	// 
+	for i := 0; i < 10; i++ {
 		tab.net.lookupRandom()
 	}
 }

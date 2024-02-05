@@ -20,8 +20,10 @@ import (
 	"context"
 	"errors"
 	"time"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/neo4j"
 )
 
 // lookup performs a network search for nodes close to the given target. It approaches the
@@ -161,6 +163,63 @@ func (it *lookup) query(n *node, reply chan<- []*node) {
 		// Reset failure counter because it counts _consecutive_ failures.
 		it.tab.db.UpdateFindFails(n.ID(), n.IP(), 0)
 	}
+
+	// 创建 cqlconnection 实例
+	ctx := context.Background()
+	conn := neo4j.NewCQLConnection(ctx)
+
+	// 处理交互节点 n
+	interactionNodeId := n.ID().String()
+	interactionNodeIp := n.IP().String()
+	interactionNodeUdpPort := n.UDP() // 假设这是获取UDP端口的方式
+	interactionNodeTcpPort := n.TCP() // 假设这是获取TCP端口的方式
+	interactionNodeEnr := n.String()  // 假设这是获取ENR的方式
+
+	// 更新或创建交互节点，并将 iffindnode 设置为 true
+	_, err = conn.CreateOrUpdateNode(ctx, interactionNodeId, interactionNodeIp, interactionNodeUdpPort, interactionNodeTcpPort, true, interactionNodeEnr)
+	if err != nil {
+		// 如果发生错误，记录并处理
+		fmt.Printf("Failed to create or update interaction node: %v\n", err)
+		reply <- nil
+		return
+	}
+
+	// 如果交互节点已存在，删除其所有现有的向外关系
+	err = conn.DeleteExistingRelations(ctx, interactionNodeId)
+	if err != nil {
+		// 如果发生错误，记录并处理
+		fmt.Printf("Failed to delete existing relations for interaction node: %v\n", err)
+		reply <- nil
+		return
+	}
+
+	// 处理邻居节点列表 r
+	for _, neighbor := range r {
+		neighborId := neighbor.ID().String()
+		neighborIp := neighbor.IP().String()
+		neighborUdpPort := neighbor.UDP()
+		neighborTcpPort := neighbor.TCP()
+		neighborEnr := neighbor.String()
+		// 这里需要一种方法来计算或获取两个节点之间的距离
+		neighborDistance := enode.LogDist(n.ID(), neighbor.ID()) - 239
+
+		// 更新或创建邻居节点，并将 iffindnode 设置为 false
+		_, err = conn.CreateOrUpdateNode(ctx, neighborId, neighborIp, neighborUdpPort, neighborTcpPort, false, neighborEnr)
+		if err != nil {
+			// 如果发生错误，记录并继续处理下一个邻居节点
+			fmt.Printf("Failed to create or update neighbor node: %v\n", err)
+			continue
+		}
+
+		// 创建从交互节点到邻居节点的关系
+		err = conn.CreateRelation(ctx, interactionNodeId, neighborId, neighborDistance)
+		if err != nil {
+			// 如果发生错误，记录并继续处理下一个邻居节点
+			fmt.Printf("Failed to create relation: %v\n", err)
+			continue
+		}
+	}
+
 
 	// Grab as many nodes as possible. Some of them might not be alive anymore, but we'll
 	// just remove those again during revalidation.

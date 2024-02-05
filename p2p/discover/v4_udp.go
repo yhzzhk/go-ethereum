@@ -296,14 +296,54 @@ func (t *UDPv4) newLookup(ctx context.Context, targetKey encPubkey) *lookup {
 	return it
 }
 
-// findnode sends a findnode request to the given node and waits until
-// the node has sent up to k neighbors.
+// // findnode sends a findnode request to the given node and waits until
+// // the node has sent up to k neighbors.
+// func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubkey) ([]*node, error) {
+// 	t.ensureBond(toid, toaddr)
+
+// 	// Add a matcher for 'neighbours' replies to the pending reply queue. The matcher is
+// 	// active until enough nodes have been received.
+// 	nodes := make([]*node, 0, bucketSize)
+// 	nreceived := 0
+// 	rm := t.pending(toid, toaddr.IP, v4wire.NeighborsPacket, func(r v4wire.Packet) (matched bool, requestDone bool) {
+// 		reply := r.(*v4wire.Neighbors)
+// 		for _, rn := range reply.Nodes {
+// 			nreceived++
+// 			n, err := t.nodeFromRPC(toaddr, rn)
+// 			if err != nil {
+// 				t.log.Trace("Invalid neighbor node received", "ip", rn.IP, "addr", toaddr, "err", err)
+// 				continue
+// 			}
+// 			nodes = append(nodes, n)
+// 		}
+// 		return true, nreceived >= bucketSize
+// 	})
+// 	t.send(toaddr, toid, &v4wire.Findnode{
+// 		Target:     target,
+// 		Expiration: uint64(time.Now().Add(expiration).Unix()),
+// 	})
+// 	// Ensure that callers don't see a timeout if the node actually responded. Since
+// 	// findnode can receive more than one neighbors response, the reply matcher will be
+// 	// active until the remote node sends enough nodes. If the remote end doesn't have
+// 	// enough nodes the reply matcher will time out waiting for the second reply, but
+// 	// there's no need for an error in that case.
+// 	err := <-rm.errc
+// 	if errors.Is(err, errTimeout) && rm.reply != nil {
+// 		err = nil
+// 	}
+// 	return nodes, err
+// }
+
 func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubkey) ([]*node, error) {
 	t.ensureBond(toid, toaddr)
 
 	// Add a matcher for 'neighbours' replies to the pending reply queue. The matcher is
 	// active until enough nodes have been received.
-	nodes := make([]*node, 0, bucketSize)
+	//添加一个回复匹配器到待处理的回复队列中。这个回复匹配器将会匹配类型为 v4wire.Neighbors 的回复数据。
+	//当接收到回复时，会将其中的邻居节点信息添加到 nodes 中，并且匹配器会判断是否收到了足够数量的邻居节点，
+	//如果收到足够数量的邻居节点，则回复匹配器会结束。
+
+	nodes := make([]*node, 0)
 	nreceived := 0
 	rm := t.pending(toid, toaddr.IP, v4wire.NeighborsPacket, func(r v4wire.Packet) (matched bool, requestDone bool) {
 		reply := r.(*v4wire.Neighbors)
@@ -314,14 +354,43 @@ func (t *UDPv4) findnode(toid enode.ID, toaddr *net.UDPAddr, target v4wire.Pubke
 				t.log.Trace("Invalid neighbor node received", "ip", rn.IP, "addr", toaddr, "err", err)
 				continue
 			}
-			nodes = append(nodes, n)
+			// 检查节点是否已在列表中，避免重复添加
+			if !containsNode(nodes, n) {
+				nodes = append(nodes, n)
+				nreceived++
+			}
 		}
-		return true, nreceived >= bucketSize
+		fmt.Printf("从节点%s收到的节点数:%d\n", toid.String(), nreceived)
+		return true, false
 	})
-	t.send(toaddr, toid, &v4wire.Findnode{
-		Target:     target,
-		Expiration: uint64(time.Now().Add(expiration).Unix()),
-	})
+
+	var targets [17]*encPubkey // 构造的targets存储列表
+	length := 0
+	for length < 17 {
+		var targetnew encPubkey // 随机生成公钥
+		crand.Read(targetnew[:])
+
+		// 计算随机生成的公钥的id与目标id的距离
+		targetnewid := enode.ID(crypto.Keccak256Hash(targetnew[:]))
+		distance := enode.LogDist(targetnewid, toid) - 239 - 1
+
+		// 判断target中是否已经存在这个距离节点id,如果已经存在就下一次，如果不存在就存到相应位置
+		if distance >= 0 {
+			if targets[distance] == nil {
+				targets[distance] = &targetnew
+				// fmt.Printf("生成的第%d个的公钥:%s, 与通信节点距离为%d.\n", length+1, targetnew.id().GoString(), distance)
+				length++
+			}
+		}
+	}
+
+	for _, target := range targets {
+		t.send(toaddr, toid, &v4wire.Findnode{
+			Target:     v4wire.Pubkey(*target),
+			Expiration: uint64(time.Now().Add(expiration).Unix()),
+		})
+	}
+
 	// Ensure that callers don't see a timeout if the node actually responded. Since
 	// findnode can receive more than one neighbors response, the reply matcher will be
 	// active until the remote node sends enough nodes. If the remote end doesn't have
@@ -784,4 +853,13 @@ func (t *UDPv4) verifyENRResponse(h *packetHandlerV4, from *net.UDPAddr, fromID 
 		return errUnsolicitedReply
 	}
 	return nil
+}
+
+func containsNode(nodeList []*node, n *node) bool {
+    for _, node := range nodeList {
+        if node.ID() == n.ID() {
+            return true
+        }
+    }
+    return false
 }
