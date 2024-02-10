@@ -21,13 +21,16 @@ import (
 	"math/rand"
 	"sync"
 	"fmt"
+	"strconv"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/infurasrv"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
+	
 )
 
 const (
@@ -502,6 +505,40 @@ func (p *Peer) GetPeerInfo() map[string]interface{} {
     peerInfo["forkID"] = fmt.Sprintf("%v", p.forkID)
 
     return peerInfo
+}
+
+func (p *Peer) GetPeerBlockHeight() (string, error) {
+	head, _ := p.Head()
+	blockHash := head.Hex()
+	infuraProjectID := "32a4d96166714014b4aa7078899f8285"
+	blockNumber, err := infurasrv.GetBlockNumberByHash(infuraProjectID, blockHash)
+	if err != nil {
+		return "", err
+	}
+	return blockNumber, nil
+}
+
+func (p *Peer) GetBlockHeightcha() (string, error) {
+	currentBlockHex := p2p.GetBlockHeight()
+	peerBlockHex, err := p.GetPeerBlockHeight()
+	if err != nil {
+		return "", err
+	}
+
+	// 将十六进制字符串转换为整数
+	currentBlockInt, _ := strconv.ParseInt(currentBlockHex, 0, 64)
+	peerBlockInt, _ := strconv.ParseInt(peerBlockHex, 0, 64)
+
+	// fmt.Println("目前高度：",currentBlockInt)
+	// fmt.Println("节点高度：", peerBlockInt)
+	// 创建大整数以便进行减法运算
+	currentBlock := big.NewInt(currentBlockInt)
+	peerBlock := big.NewInt(peerBlockInt)
+
+	// 计算区块高度差值
+	diff := new(big.Int).Sub(currentBlock, peerBlock)
+
+	return fmt.Sprintf("%v", diff), nil
 }
 
 // knownCache is a cache for known hashes.

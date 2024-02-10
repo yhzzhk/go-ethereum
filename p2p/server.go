@@ -22,9 +22,11 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,6 +73,7 @@ var (
 	errEncHandshakeError   = errors.New("rlpx enc error")
 	errProtoHandshakeError = errors.New("rlpx proto error")
 )
+var LatestBlockHeight string
 
 // Config holds Server options.
 type Config struct {
@@ -506,6 +509,8 @@ func (srv *Server) Start() (err error) {
 	srv.setupDialScheduler()
 
 	srv.loopWG.Add(1)
+	go UpdateBlockHeight()
+	srv.loopWG.Add(1)
 	go srv.run()
 	return nil
 }
@@ -785,7 +790,7 @@ running:
 				// 创建 cqlconnection 实例
 				ctx := context.Background()
 				conn := neo4j.NewCQLConnection(ctx)
-				services := "guigu-01"
+				services := "singapore-05"
 
 				// 构建不包含 flags 的属性映射
 				properties := map[string]interface{}{
@@ -1209,4 +1214,43 @@ func (srv *Server) PeersInfo() []*PeerInfo {
 		}
 	}
 	return infos
+}
+
+// UpdateBlockHeight 定期从Etherscan更新区块高度
+func UpdateBlockHeight() {
+	for {
+		// 向Etherscan API发送GET请求
+		resp, err := http.Get(fmt.Sprintf("https://api.etherscan.io/api?module=proxy&action=eth_blockNumber&apikey=%s", "33UBZJS3S3GCH3M3ZTFXGZV241G8JZ3PQB"))
+		if err != nil {
+			fmt.Println("Error sending GET request:", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		// 解析API响应
+		var data map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			fmt.Println("Error decoding JSON:", err)
+			return
+		}
+
+		// 提取总难度值
+		result, ok := data["result"].(string)
+		if !ok {
+			fmt.Println("Error extracting total difficulty from response")
+			return
+		}
+
+		// 更新 LatestBlockHeight 变量
+		LatestBlockHeight = result
+		fmt.Println("更新LatestBlockHeight:",LatestBlockHeight)
+
+		// 等待一段时间再次更新
+		time.Sleep(time.Minute)
+	}
+}
+
+// GetTotalDifficulty 返回最新的区块高度
+func GetBlockHeight() string {
+	return LatestBlockHeight
 }

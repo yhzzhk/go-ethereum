@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -380,10 +381,27 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 
 			// UpsertNode 逻辑
 			isHandshakeComplete := false
+			BlockHeight := ""
+			blockheightcha := ""
+			is_sync := false
 			if strings.Contains(errStr, "network ID mismatch") || strings.Contains(errStr, "fork ID rejected") {
     			isHandshakeComplete = false
 			} else if strings.Contains(errStr, "node discovery completed") {
     			isHandshakeComplete = true
+				BlockHeight16, err := peer.GetPeerBlockHeight() //根据节点的最新区块哈希获取节点的最新区块高度
+				if err!=nil{
+					fmt.Println("获取blockheight失败:", err)
+				}
+				BlockHeightInt, _ := strconv.ParseInt(BlockHeight16, 0, 64) // 将16进制的区块高度转化为10进制
+				BlockHeight = fmt.Sprintf("%v",BlockHeightInt)
+				blockheightcha, err = peer.GetBlockHeightcha() // 求节点的区块高度与最新的区块高度之间的差
+				if err != nil {
+					fmt.Println("获取blockheightcha失败:", err)
+				}
+				blockHeightChaInt, _ := strconv.ParseInt(blockheightcha, 0, 64)
+				if blockHeightChaInt < 10000{ // 如果差值小于10000，就认为是同步完成的节点
+					is_sync = true
+				}
 			}
 
 			// UpsertNode 逻辑
@@ -397,6 +415,9 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
     			"last_time":            time.Now().Format(time.RFC3339),
     			"is_eth_handshake":     true,
     			"is_eth_handshake_complete": isHandshakeComplete,
+				"blockheight":          BlockHeight,
+				"blockheightcha":       blockheightcha,
+				"is_sync":              is_sync,
 			}
 			if _, err := conn.UpsertNode(ctx, peerInfo["id"].(string), properties); err != nil {
 				fmt.Println("Error upserting node:", err)
