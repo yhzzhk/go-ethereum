@@ -1185,10 +1185,12 @@ func addPeerToNeo4j(n *enode.Node, r []*enode.Node) error {
 	// 处理交互节点 n
 	interactionNodeId := n.ID().String()
 	interactionNodeIp := n.IP().String()
-	interactionNodeEnr := n.String() // 假设这是获取ENR的方式
+	interactionNodeEnr := n.String() // 获取ENR的方式
+
+	addtime := time.Now().Format(time.RFC3339) // 记录节点添加和更新时间
 
 	// 更新或创建交互节点，并将 iffindnode 设置为 true
-	_, err := conn.CreateOrUpdateNode(ctx, interactionNodeId, interactionNodeIp, true, interactionNodeEnr)
+	_, err := conn.CreateOrUpdateNode(ctx, interactionNodeId, interactionNodeIp, true, interactionNodeEnr, addtime)
 	if err != nil {
 		// 如果发生错误，记录并处理
 		fmt.Printf("Failed to create or update interaction node: %v\n", err)
@@ -1211,7 +1213,7 @@ func addPeerToNeo4j(n *enode.Node, r []*enode.Node) error {
 		neighborDistance := enode.LogDist(n.ID(), neighbor.ID()) - 239
 
 		// 更新或创建邻居节点，并将 iffindnode 设置为 false
-		_, err = conn.CreateOrUpdateNode(ctx, neighborId, neighborIp, false, neighborEnr)
+		_, err = conn.CreateOrUpdateNode(ctx, neighborId, neighborIp, false, neighborEnr, addtime)
 		if err != nil {
 			// 如果发生错误，记录并继续处理下一个邻居节点
 			fmt.Printf("Failed to create or update neighbor node: %v\n", err)
