@@ -39,6 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/neo4j"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/neo4judp"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
@@ -787,24 +788,32 @@ running:
 					isInbound = true
 				}
 
+				// 判断节点是否可达
+				var isReachable bool
+				err := srv.ntab.EnsureBond(p.rw.node)
+				if err == nil {
+					isReachable = true
+				}
+
 				// 创建 cqlconnection 实例
 				ctx := context.Background()
 				conn := neo4j.NewCQLConnection(ctx)
-				services := "singapore-05"
+				services := "singapore-06"
 
 				// 构建不包含 flags 的属性映射
 				properties := map[string]interface{}{
-					"id":             fmt.Sprintf("%v", p.ID()),
-					"enode":          fmt.Sprintf("%v", p.Info().Enode),
-					"fullname":       p.Fullname(),
-					"ip":             fmt.Sprintf("%v", p.rw.node.IP()),
-					"udp_port":       fmt.Sprintf("%v", p.rw.node.UDP()),
-					"tcp_port":       fmt.Sprintf("%v", p.rw.node.TCP()),
-					"caps":           fmt.Sprintf("%v", p.rw.caps),
-					"last_time":      time.Now().Format(time.RFC3339),
-					"is_dyndial":     isDyndial,
-					"is_inbound":     isInbound,
-					"services":       services,
+					"id":           fmt.Sprintf("%v", p.ID()),
+					"enode":        fmt.Sprintf("%v", p.Info().Enode),
+					"fullname":     p.Fullname(),
+					"ip":           fmt.Sprintf("%v", p.rw.node.IP()),
+					"udp_port":     fmt.Sprintf("%v", p.rw.node.UDP()),
+					"tcp_port":     fmt.Sprintf("%v", p.rw.node.TCP()),
+					"caps":         fmt.Sprintf("%v", p.rw.caps),
+					"last_time":    time.Now().Format(time.RFC3339),
+					"is_dyndial":   isDyndial,
+					"is_inbound":   isInbound,
+					"services":     services,
+					"is_reachable": isReachable,
 				}
 
 				// 添加或更新节点信息
@@ -969,13 +978,13 @@ func (srv *Server) checkInboundConn(remoteIP net.IP) error {
 	if srv.NetRestrict != nil && !srv.NetRestrict.Contains(remoteIP) {
 		return fmt.Errorf("not in netrestrict list")
 	}
-	// Reject Internet peers that try too often.
-	now := srv.clock.Now()
-	srv.inboundHistory.expire(now, nil)
-	if !netutil.IsLAN(remoteIP) && srv.inboundHistory.contains(remoteIP.String()) {
-		return fmt.Errorf("too many attempts")
-	}
-	srv.inboundHistory.add(remoteIP.String(), now.Add(inboundThrottleTime))
+	// // Reject Internet peers that try too often.
+	// now := srv.clock.Now()
+	// srv.inboundHistory.expire(now, nil)
+	// if !netutil.IsLAN(remoteIP) && srv.inboundHistory.contains(remoteIP.String()) {
+	// 	return fmt.Errorf("too many attempts")
+	// }
+	// srv.inboundHistory.add(remoteIP.String(), now.Add(inboundThrottleTime))
 	return nil
 }
 
@@ -1118,7 +1127,23 @@ func (srv *Server) runPeer(p *Peer) {
 		// 完成了 eth 握手，更新节点信息
 		srv.extendedNodeStorage.AddOrUpdateNode(p.rw.node, true)
 		fmt.Println("完成了eth握手, 更新extendednodestorage节点个数:", srv.extendedNodeStorage.NodeCount())
-
+		// 发送ping来判断节点是否可达 并建立连接bond
+		err := srv.ntab.EnsureBond(p.rw.node)
+		if err != nil {
+			fmt.Printf("节点%s不可达\n", p.rw.node.ID().GoString())
+		} else {
+			// 发送findnode请求邻居节点信息
+			enodes, err := srv.ntab.FindAllNeighbors(p.rw.node)
+			if err != nil {
+				fmt.Printf("节点%vFindAllNeighbors失败:%v\n", p.rw.node.ID().GoString(), err)
+			}else{
+				fmt.Println("待写入的邻居节点数量:", len(enodes))
+				err = addPeerToNeo4j(p.rw.node, enodes)
+				if err != nil {
+					fmt.Printf("节点%v的邻居节点关系写入失败:%v\n", p.rw.node, err)
+				}
+			}
+		}
 	case "too many peers":
 		// 对于 "too many peers" 错误，不执行任何操作
 
@@ -1150,6 +1175,60 @@ func (srv *Server) runPeer(p *Peer) {
 		RemoteAddress: p.RemoteAddr().String(),
 		LocalAddress:  p.LocalAddr().String(),
 	})
+}
+
+func addPeerToNeo4j(n *enode.Node, r []*enode.Node) error {
+	// 创建 cqlconnection 实例
+	ctx := context.Background()
+	conn := neo4judp.NewCQLConnection(ctx)
+
+	// 处理交互节点 n
+	interactionNodeId := n.ID().String()
+	interactionNodeIp := n.IP().String()
+	interactionNodeEnr := n.String() // 假设这是获取ENR的方式
+
+	// 更新或创建交互节点，并将 iffindnode 设置为 true
+	_, err := conn.CreateOrUpdateNode(ctx, interactionNodeId, interactionNodeIp, true, interactionNodeEnr)
+	if err != nil {
+		// 如果发生错误，记录并处理
+		fmt.Printf("Failed to create or update interaction node: %v\n", err)
+		return err
+	}
+	// 如果交互节点已存在，删除其所有现有的向外关系
+	err = conn.DeleteExistingRelations(ctx, interactionNodeId)
+	if err != nil {
+		// 如果发生错误，记录并处理
+		fmt.Printf("Failed to delete existing relations for interaction node: %v\n", err)
+		return err
+	}
+
+	// 处理邻居节点列表 r
+	for _, neighbor := range r {
+		neighborId := neighbor.ID().String()
+		neighborIp := neighbor.IP().String()
+		neighborEnr := neighbor.String()
+		// 这里需要一种方法来计算或获取两个节点之间的距离
+		neighborDistance := enode.LogDist(n.ID(), neighbor.ID()) - 239
+
+		// 更新或创建邻居节点，并将 iffindnode 设置为 false
+		_, err = conn.CreateOrUpdateNode(ctx, neighborId, neighborIp, false, neighborEnr)
+		if err != nil {
+			// 如果发生错误，记录并继续处理下一个邻居节点
+			fmt.Printf("Failed to create or update neighbor node: %v\n", err)
+			continue
+		}
+
+		// 创建从交互节点到邻居节点的关系
+		err = conn.CreateRelation(ctx, interactionNodeId, neighborId, neighborDistance)
+		if err != nil {
+			// 如果发生错误，记录并继续处理下一个邻居节点
+			fmt.Printf("Failed to create relation: %v\n", err)
+			continue
+		}
+	}
+	fmt.Printf("节点%n关系写入完成\n", n.ID().String())
+
+	return nil
 }
 
 // NodeInfo represents a short summary of the information known about the host.

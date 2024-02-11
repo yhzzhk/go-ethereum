@@ -186,6 +186,20 @@ func (n *Node) UnmarshalText(text []byte) error {
 	return err
 }
 
+func (n *Node) GetUdpAddr() *net.UDPAddr {
+	ip := n.IP()       // 使用 IP() 方法获取 IP 地址
+	udpPort := n.UDP() // 使用 UDP() 方法获取 UDP 端口号
+
+	if ip == nil || udpPort == 0 {
+		return nil // 如果 IP 地址或 UDP 端口号缺失，则返回 nil
+	}
+
+	return &net.UDPAddr{
+		IP:   ip,
+		Port: udpPort,
+	}
+}
+
 // ID is a unique identifier for each node.
 type ID [32]byte
 
