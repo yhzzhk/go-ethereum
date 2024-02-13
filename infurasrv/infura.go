@@ -23,7 +23,9 @@ type jsonRPCResponse struct {
 }
 
 // 函数用于通过Infura获取区块高度
-func GetBlockNumberByHash(infuraProjectID, blockHash string) (string, error) {
+func GetBlockNumberByHash(blockHash string) (string, error) {
+
+	infuraProjectID := "9bc799bb0d97435696cb99d8ad586245"
 	// 构造请求体
 	requestBody := jsonRPCRequest{
 		JSONRPC: "2.0",

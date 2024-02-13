@@ -510,8 +510,7 @@ func (p *Peer) GetPeerInfo() map[string]interface{} {
 func (p *Peer) GetPeerBlockHeight() (string, error) {
 	head, _ := p.Head()
 	blockHash := head.Hex()
-	infuraProjectID := "32a4d96166714014b4aa7078899f8285"
-	blockNumber, err := infurasrv.GetBlockNumberByHash(infuraProjectID, blockHash)
+	blockNumber, err := infurasrv.GetBlockNumberByHash(blockHash)
 	if err != nil {
 		return "", err
 	}
