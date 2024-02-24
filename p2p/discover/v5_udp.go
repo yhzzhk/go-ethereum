@@ -38,8 +38,8 @@ import (
 
 const (
 	lookupRequestLimit      = 3  // max requests against a single node during lookup
-	findnodeResultLimit     = 16 // applies in FINDNODE handler
-	totalNodesResponseLimit = 5  // applies in waitForNodes
+	findnodeResultLimit     = 1000 // applies in FINDNODE handler
+	totalNodesResponseLimit = 20  // applies in waitForNodes
 
 	respTimeoutV5 = 700 * time.Millisecond
 )
@@ -337,6 +337,72 @@ func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 		}
 	}
 	return nodes.entries, err
+}
+
+func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
+	var (
+		target = tonode.ID()
+		// dists = lookupDistances(target, destNode.ID())
+		nodes                        = nodesByDistance{target: target}
+		err1, err2, err3, err4, err5 error
+	)
+	// var dist1, dist2, dist3, dist4, dist5 []uint
+	dist1 := []uint{240, 241, 242}
+	dist2 := []uint{243, 244, 245}
+	dist3 := []uint{246, 247, 248}
+	dist4 := []uint{249, 250, 251}
+	dist5 := []uint{252, 253, 254}
+
+	var r1, r2, r3, r4, r5 []*enode.Node
+	r1, err1 = t.findnode(tonode, dist1)
+	r2, err2 = t.findnode(tonode, dist2)
+	r3, err3 = t.findnode(tonode, dist3)
+	r4, err4 = t.findnode(tonode, dist4)
+	r5, err5 = t.findnode(tonode, dist5)
+
+	if errors.Is(err1, errClosed) {
+		return nil, err1
+	}
+	if errors.Is(err2, errClosed) {
+		return nil, err2
+	}
+	if errors.Is(err3, errClosed) {
+		return nil, err3
+	}
+	if errors.Is(err4, errClosed) {
+		return nil, err4
+	}
+	if errors.Is(err5, errClosed) {
+		return nil, err5
+	}
+
+	for _, n := range r1 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+	for _, n := range r2 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+	for _, n := range r3 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+	for _, n := range r4 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+	for _, n := range r5 {
+		if n.ID() != t.Self().ID() {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+		}
+	}
+
+	return unwrapNodes(nodes.entries), nil
 }
 
 // lookupDistances computes the distance parameter for FINDNODE calls to dest.
