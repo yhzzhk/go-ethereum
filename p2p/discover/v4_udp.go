@@ -346,23 +346,31 @@ func (t *UDPv4) findallneighbors(toid enode.ID, toaddr *net.UDPAddr, target v4wi
 	nodes := make([]*node, 0)
 	nreceived := 0
 
-	var targets [17]*encPubkey // 构造的targets存储列表
+	var targets [17]*encPubkey                                                                            // 维持17个槽位的数组
+	desiredDistances := map[int]bool{9: true, 11: true, 12: true, 13: true, 14: true, 15: true, 16: true} // 目标距离集合
 	length := 0
-	for length < 17 {
+
+	// 首先尝试生成特定条件的公钥
+	for length < 7 {
 		var targetnew encPubkey // 随机生成公钥
 		crand.Read(targetnew[:])
 
-		// 计算随机生成的公钥的id与目标id的距离
 		targetnewid := enode.ID(crypto.Keccak256Hash(targetnew[:]))
 		distance := enode.LogDist(targetnewid, toid) - 239 - 1
 
-		// 判断target中是否已经存在这个距离节点id,如果已经存在就下一次，如果不存在就存到相应位置
-		if distance >= 0 {
-			if targets[distance] == nil {
-				targets[distance] = &targetnew
-				// fmt.Printf("生成的第%d个的公钥:%s, 与通信节点距离为%d.\n", length+1, targetnew.id().GoString(), distance)
-				length++
-			}
+		// 如果是我们想要的距离，并且该位置为空，则填充
+		if desiredDistances[distance] && targets[distance] == nil {
+			targets[distance] = &targetnew
+			length++
+		}
+	}
+
+	// 然后为任何剩余的空槽位随机生成公钥
+	for i := 0; i < len(targets); i++ {
+		if targets[i] == nil {
+			var targetnew encPubkey // 随机生成公钥
+			crand.Read(targetnew[:])
+			targets[i] = &targetnew // 填充空槽位
 		}
 	}
 

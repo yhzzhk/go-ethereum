@@ -39,9 +39,9 @@ import (
 	"github.com/ethereum/go-ethereum/neo4j"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/neo4judp"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/p2p/nat"
+	"github.com/ethereum/go-ethereum/p2p/neo4judp"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 	"golang.org/x/exp/slices"
 )
@@ -809,7 +809,7 @@ running:
 					"udp_port":     fmt.Sprintf("%v", p.rw.node.UDP()),
 					"tcp_port":     fmt.Sprintf("%v", p.rw.node.TCP()),
 					"caps":         fmt.Sprintf("%v", p.rw.caps),
-					"last_time":    time.Now().Format(time.RFC3339),
+					"last_time":    time.Now().UTC().Format(time.RFC3339),
 					"is_dyndial":   isDyndial,
 					"is_inbound":   isInbound,
 					"services":     services,
@@ -817,13 +817,11 @@ running:
 				}
 
 				// 添加或更新节点信息
-				re, err := conn.UpsertNode(ctx, p.ID().String(), properties)
+				_, err = conn.UpsertNode(ctx, p.ID().String(), properties)
 				if err != nil {
 					fmt.Println("Error upserting node:", err)
-				}else{
-					fmt.Println("addpeer的upsertnode结果:", re)
 				}
-
+				fmt.Printf("连接信息记录: time:%v, id:%v, 阶段: rlpx握手, 状态: %v, 类型: %v \n", time.Now().UTC().Format(time.RFC3339), c.node.ID(), err, c.flags)
 				srv.log.Debug("Adding p2p peer", "peercount", len(peers), "id", p.ID(), "conn", c.flags, "addr", p.RemoteAddr(), "name", p.Name())
 				srv.dialsched.peerAdded(c)
 				if p.Inbound() {
@@ -849,7 +847,6 @@ running:
 			}
 			activePeerGauge.Dec(1)
 
-			
 		}
 	}
 
@@ -1050,13 +1047,12 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 	phs, err := c.doProtoHandshake(srv.ourHandshake)
 	if err != nil {
 		clog.Trace("Failed p2p handshake", "err", err)
-
+		fmt.Printf("连接信息记录: time:%v, id:%v, 阶段: rlpx握手, 状态: %v, 类型: %v \n", time.Now().UTC().Format(time.RFC3339), c.node.ID(), err, c.flags)
 		// 更新extendedNodeSrorage，如果too many peers，则加入之后继续dail。
 		if err.Error() == "too many peers" {
 			srv.extendedNodeStorage.AddOrUpdateNode(c.node, false)
 			fmt.Println("rlpx握手遇到too many peers错误, 更新extendednodestorage节点个数:", srv.extendedNodeStorage.NodeCount())
 		}
-
 
 		return fmt.Errorf("%w: %v", errProtoHandshakeError, err)
 	}
@@ -1136,7 +1132,7 @@ func (srv *Server) runPeer(p *Peer) {
 			enodes, err := srv.ntab.FindAllNeighbors(p.rw.node)
 			if err != nil {
 				fmt.Printf("节点%vFindAllNeighbors失败:%v\n", p.rw.node.ID().GoString(), err)
-			}else{
+			} else {
 				fmt.Println("待写入的邻居节点数量:", len(enodes))
 				err = addPeerToNeo4j(p.rw.node, enodes)
 				if err != nil {
@@ -1187,7 +1183,7 @@ func addPeerToNeo4j(n *enode.Node, r []*enode.Node) error {
 	interactionNodeIp := n.IP().String()
 	interactionNodeEnr := n.String() // 获取ENR的方式
 
-	addtime := time.Now().Format(time.RFC3339) // 记录节点添加和更新时间
+	addtime := time.Now().UTC().Format(time.RFC3339) // 记录节点添加和更新时间
 
 	// 更新或创建交互节点，并将 iffindnode 设置为 true
 	_, err := conn.CreateOrUpdateNode(ctx, interactionNodeId, interactionNodeIp, true, interactionNodeEnr, addtime)
@@ -1324,7 +1320,7 @@ func UpdateBlockHeight() {
 
 		// 更新 LatestBlockHeight 变量
 		LatestBlockHeight = result
-		fmt.Println("更新LatestBlockHeight:",LatestBlockHeight)
+		fmt.Println("更新LatestBlockHeight:", LatestBlockHeight)
 
 		// 等待一段时间再次更新
 		time.Sleep(time.Minute)

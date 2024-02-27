@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	uri      = "bolt://43.159.148.218:7687"
+	uri      = "bolt://localhost:7687"
 	username = "neo4j"
 	password = "11111111"
 )

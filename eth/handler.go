@@ -22,11 +22,11 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -354,18 +354,18 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	forkID := forkid.NewID(h.chain.Config(), genesis, number, head.Time)
 	if err := peer.Handshake(h.networkID, td, hash, genesis.Hash(), forkID, h.forkFilter); err != nil {
 		peer.Log().Debug("Ethereum handshake failed", "err", err)
-		
+
 		// 调用 GetPeerInfo 函数获取信息
 		peerInfo := peer.GetPeerInfo()
 
-		// 使用 fmt.Println 打印输出
-		fmt.Println("Peer Information:")
-		fmt.Println("ID:", peerInfo["id"])
-		fmt.Println("Version:", peerInfo["version"])
-		fmt.Println("Head:", peerInfo["head"])
-		fmt.Println("Total Difficulty:", peerInfo["totalDifficulty"])
-		fmt.Println("Network ID:", peerInfo["networkID"])
-		fmt.Println("Fork ID:", peerInfo["forkID"])
+		// // 使用 fmt.Println 打印输出
+		// fmt.Println("Peer Information:")
+		// fmt.Println("ID:", peerInfo["id"])
+		// fmt.Println("Version:", peerInfo["version"])
+		// fmt.Println("Head:", peerInfo["head"])
+		// fmt.Println("Total Difficulty:", peerInfo["totalDifficulty"])
+		// fmt.Println("Network ID:", peerInfo["networkID"])
+		// fmt.Println("Fork ID:", peerInfo["forkID"])
 
 		// 停顿5s确保rlpx那里的neo4j已经写入完成
 		time.Sleep(5 * time.Second)
@@ -379,55 +379,56 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 			strings.Contains(errStr, "fork ID rejected") ||
 			strings.Contains(errStr, "node discovery completed") {
 
+			fmt.Printf("连接信息记录: time:%v, id:%v, 阶段: eth握手, 状态: complete, isinbound: %v \n", time.Now().UTC().Format(time.RFC3339), peer.ID(), peer.Inbound())
 			// UpsertNode 逻辑
 			isHandshakeComplete := false
 			BlockHeight := ""
 			blockheightcha := ""
 			is_sync := false
 			if strings.Contains(errStr, "network ID mismatch") || strings.Contains(errStr, "fork ID rejected") {
-    			isHandshakeComplete = false
+				isHandshakeComplete = false
+				fmt.Printf("连接信息记录: time:%v, id:%v, 阶段: eth状态匹配, 状态: %v, isinbound: %v \n", time.Now().UTC().Format(time.RFC3339), peer.ID(), "链id="+peerInfo["networkID"].(string)+" 分叉id="+peerInfo["forkID"].(string), peer.Inbound())
 			} else if strings.Contains(errStr, "node discovery completed") {
-    			isHandshakeComplete = true
+				fmt.Printf("连接信息记录: time:%v, id:%v, 阶段: eth状态匹配, 状态: complete, isinbound: %v \n", time.Now().UTC().Format(time.RFC3339), peer.ID(), peer.Inbound())
+				isHandshakeComplete = true
 				BlockHeight16, err := peer.GetPeerBlockHeight() //根据节点的最新区块哈希获取节点的最新区块高度
-				if err!=nil{
+				if err != nil {
 					fmt.Println("获取blockheight失败:", err)
 				}
 				BlockHeightInt, _ := strconv.ParseInt(BlockHeight16, 0, 64) // 将16进制的区块高度转化为10进制
-				BlockHeight = fmt.Sprintf("%v",BlockHeightInt)
+				BlockHeight = fmt.Sprintf("%v", BlockHeightInt)
 				blockheightcha, err = peer.GetBlockHeightcha() // 求节点的区块高度与最新的区块高度之间的差
 				if err != nil {
 					fmt.Println("获取blockheightcha失败:", err)
 				}
 				blockHeightChaInt, _ := strconv.ParseInt(blockheightcha, 0, 64)
-				if blockHeightChaInt < 10000{ // 如果差值小于10000，就认为是同步完成的节点
+				if blockHeightChaInt < 10000 { // 如果差值小于10000，就认为是同步完成的节点
 					is_sync = true
 				}
 			}
 
 			// UpsertNode 逻辑
 			properties := map[string]interface{}{
-    			"id":                   peerInfo["id"],
-    			"version":              peerInfo["version"],
-    			"head":                 peerInfo["head"],
-    			"totalDifficulty":      peerInfo["totalDifficulty"],
-    			"networkID":            peerInfo["networkID"],
-    			"forkID":               peerInfo["forkID"],
-    			"last_time":            time.Now().Format(time.RFC3339),
-    			"is_eth_handshake":     true,
-    			"is_eth_handshake_complete": isHandshakeComplete,
-				"blockheight":          BlockHeight,
-				"blockheightcha":       blockheightcha,
-				"is_sync":              is_sync,
+				"id":                        peerInfo["id"],
+				"version":                   peerInfo["version"],
+				"head":                      peerInfo["head"],
+				"totalDifficulty":           peerInfo["totalDifficulty"],
+				"networkID":                 peerInfo["networkID"],
+				"forkID":                    peerInfo["forkID"],
+				"last_time":                 time.Now().UTC().Format(time.RFC3339),
+				"is_eth_handshake":          true,
+				"is_eth_handshake_complete": isHandshakeComplete,
+				"blockheight":               BlockHeight,
+				"blockheightcha":            blockheightcha,
+				"is_sync":                   is_sync,
 			}
 			if _, err := conn.UpsertNode(ctx, peerInfo["id"].(string), properties); err != nil {
 				fmt.Println("Error upserting node:", err)
 			}
 		} else {
-			// DeleteNode 逻辑
-			if err := conn.DeleteNode(ctx, peerInfo["id"].(string)); err != nil {
-				fmt.Println("Error deleting node:", err)
-			}
+			fmt.Printf("连接信息记录: time:%v, id:%v, 阶段: eth握手, 状态: %v, isinbound: %v \n", time.Now().UTC().Format(time.RFC3339), peer.ID(), err, peer.Inbound())
 		}
+
 		return err
 	}
 	// reject := false // reserved peer slots
