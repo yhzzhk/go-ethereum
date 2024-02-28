@@ -342,67 +342,42 @@ func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
 	var (
 		target = tonode.ID()
-		// dists = lookupDistances(target, destNode.ID())
-		nodes                        = nodesByDistance{target: target}
-		err1, err2, err3, err4, err5 error
+		nodes  = nodesByDistance{target: target}
+		seen   = make(map[enode.ID]struct{}) // 使用map来跟踪已经看到的节点ID
+		errs   [5]error                      // 存储错误的数组
 	)
-	// var dist1, dist2, dist3, dist4, dist5 []uint
-	dist1 := []uint{240, 241, 242}
-	dist2 := []uint{243, 244, 245}
-	dist3 := []uint{246, 247, 248}
-	dist4 := []uint{249, 250, 251}
-	dist5 := []uint{252, 253, 254}
-
-	var r1, r2, r3, r4, r5 []*enode.Node
-	r1, err1 = t.findnode(tonode, dist1)
-	r2, err2 = t.findnode(tonode, dist2)
-	r3, err3 = t.findnode(tonode, dist3)
-	r4, err4 = t.findnode(tonode, dist4)
-	r5, err5 = t.findnode(tonode, dist5)
-
-	if errors.Is(err1, errClosed) {
-		return nil, err1
-	}
-	if errors.Is(err2, errClosed) {
-		return nil, err2
-	}
-	if errors.Is(err3, errClosed) {
-		return nil, err3
-	}
-	if errors.Is(err4, errClosed) {
-		return nil, err4
-	}
-	if errors.Is(err5, errClosed) {
-		return nil, err5
+	distances := [][]uint{
+		{240, 241, 242},
+		{243, 244, 245},
+		{246, 247, 248},
+		{249, 250, 251},
+		{240, 241, 242},
 	}
 
-	for _, n := range r1 {
-		if n.ID() != t.Self().ID() {
-			nodes.push(wrapNode(n), findnodeResultLimit)
+	results := make([][]*enode.Node, len(distances))
+	for i, dist := range distances {
+		results[i], errs[i] = t.findnode(tonode, dist)
+		if errors.Is(errs[i], errClosed) {
+			return nil, errs[i]
 		}
 	}
-	for _, n := range r2 {
-		if n.ID() != t.Self().ID() {
-			nodes.push(wrapNode(n), findnodeResultLimit)
-		}
-	}
-	for _, n := range r3 {
-		if n.ID() != t.Self().ID() {
-			nodes.push(wrapNode(n), findnodeResultLimit)
-		}
-	}
-	for _, n := range r4 {
-		if n.ID() != t.Self().ID() {
-			nodes.push(wrapNode(n), findnodeResultLimit)
-		}
-	}
-	for _, n := range r5 {
-		if n.ID() != t.Self().ID() {
-			nodes.push(wrapNode(n), findnodeResultLimit)
+
+	for _, res := range results {
+		for _, n := range res {
+			if n.ID() != t.Self().ID() && !alreadySeen(seen, n.ID()) {
+				nodes.push(wrapNode(n), findnodeResultLimit)
+				seen[n.ID()] = struct{}{} // 标记为已看到
+			}
 		}
 	}
 
 	return unwrapNodes(nodes.entries), nil
+}
+
+// alreadySeen 检查节点ID是否已经在seen map中
+func alreadySeen(seen map[enode.ID]struct{}, id enode.ID) bool {
+	_, exists := seen[id]
+	return exists
 }
 
 // lookupDistances computes the distance parameter for FINDNODE calls to dest.
