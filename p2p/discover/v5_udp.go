@@ -315,12 +315,13 @@ func (t *UDPv5) newRandomLookup(ctx context.Context) *lookup {
 
 func (t *UDPv5) newLookup(ctx context.Context, target enode.ID) *lookup {
 	return newLookup(ctx, t.tab, target, func(n *node) ([]*node, error) {
-		return t.LookupWorker(n, target)
+		return t.LookupWorker(n)
 	})
 }
 
 // lookupWorker performs FINDNODE calls against a single node during lookup.
-func (t *UDPv5) LookupWorker(destNode *node, target enode.ID) ([]*node, error) {
+func (t *UDPv5) LookupWorker(destNode *node) ([]*node, error) {
+	target := destNode.ID()
 	fmt.Println("开始lookupworker:", destNode.Node.ID().String())
 	var (
 		dists = lookupDistances(target, destNode.ID())
@@ -341,6 +342,35 @@ func (t *UDPv5) LookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 	}
 	return nodes.entries, err
 }
+
+// func (t *UDPv5) newLookup(ctx context.Context, target enode.ID) *lookup {
+// 	return newLookup(ctx, t.tab, target, func(n *node) ([]*node, error) {
+// 		return t.LookupWorker(n, target)
+// 	})
+// }
+
+// // lookupWorker performs FINDNODE calls against a single node during lookup.
+// func (t *UDPv5) LookupWorker(destNode *node, target enode.ID) ([]*node, error) {
+// 	fmt.Println("开始lookupworker:", destNode.Node.ID().String())
+// 	var (
+// 		dists = lookupDistances(target, destNode.ID())
+// 		nodes = nodesByDistance{target: target}
+// 		err   error
+// 	)
+// 	var r []*enode.Node
+// 	r, err = t.findnode(unwrapNode(destNode), dists)
+// 	fmt.Println("findnode回复节点个数", len(r))
+// 	if errors.Is(err, errClosed) {
+// 		fmt.Println("findnode出错:", err)
+// 		return nil, err
+// 	}
+// 	for _, n := range r {
+// 		if n.ID() != t.Self().ID() {
+// 			nodes.push(wrapNode(n), findnodeResultLimit)
+// 		}
+// 	}
+// 	return nodes.entries, err
+// }
 
 // func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
 // 	var (
