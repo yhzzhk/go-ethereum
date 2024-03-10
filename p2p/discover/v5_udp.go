@@ -37,9 +37,9 @@ import (
 )
 
 const (
-	lookupRequestLimit      = 3  // max requests against a single node during lookup
+	lookupRequestLimit      = 3   // max requests against a single node during lookup
 	findnodeResultLimit     = 256 // applies in FINDNODE handler
-	totalNodesResponseLimit = 8  // applies in waitForNodes
+	totalNodesResponseLimit = 8   // applies in waitForNodes
 
 	respTimeoutV5 = 700 * time.Millisecond
 )
@@ -315,12 +315,13 @@ func (t *UDPv5) newRandomLookup(ctx context.Context) *lookup {
 
 func (t *UDPv5) newLookup(ctx context.Context, target enode.ID) *lookup {
 	return newLookup(ctx, t.tab, target, func(n *node) ([]*node, error) {
-		return t.lookupWorker(n, target)
+		return t.LookupWorker(n, target)
 	})
 }
 
 // lookupWorker performs FINDNODE calls against a single node during lookup.
-func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
+func (t *UDPv5) LookupWorker(destNode *node, target enode.ID) ([]*node, error) {
+	fmt.Println("开始lookupworker:", destNode.Node.ID().String())
 	var (
 		dists = lookupDistances(target, destNode.ID())
 		nodes = nodesByDistance{target: target}
@@ -328,7 +329,9 @@ func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 	)
 	var r []*enode.Node
 	r, err = t.findnode(unwrapNode(destNode), dists)
+	fmt.Println("findnode回复节点个数", len(r))
 	if errors.Is(err, errClosed) {
+		fmt.Println("findnode出错:", err)
 		return nil, err
 	}
 	for _, n := range r {
@@ -339,46 +342,46 @@ func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 	return nodes.entries, err
 }
 
-func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
-	var (
-		target = tonode.ID()
-		nodes  = nodesByDistance{target: target}
-		seen   = make(map[enode.ID]struct{}) // 使用map来跟踪已经看到的节点ID
-		errs   [5]error                      // 存储错误的数组
-	)
-	distances := [][]uint{
-		{240, 241, 242},
-		{243, 244, 245},
-		{246, 247, 248},
-		{249, 250, 251},
-		{240, 241, 242},
-	}
+// func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
+// 	var (
+// 		target = tonode.ID()
+// 		nodes  = nodesByDistance{target: target}
+// 		seen   = make(map[enode.ID]struct{}) // 使用map来跟踪已经看到的节点ID
+// 		errs   [5]error                      // 存储错误的数组
+// 	)
+// 	distances := [][]uint{
+// 		{240, 241, 242},
+// 		{243, 244, 245},
+// 		{246, 247, 248},
+// 		{249, 250, 251},
+// 		{240, 241, 242},
+// 	}
 
-	results := make([][]*enode.Node, len(distances))
-	for i, dist := range distances {
-		results[i], errs[i] = t.findnode(tonode, dist)
-		if errors.Is(errs[i], errClosed) {
-			return nil, errs[i]
-		}
-	}
+// 	results := make([][]*enode.Node, len(distances))
+// 	for i, dist := range distances {
+// 		results[i], errs[i] = t.findnode(tonode, dist)
+// 		if errors.Is(errs[i], errClosed) {
+// 			return nil, errs[i]
+// 		}
+// 	}
 
-	for _, res := range results {
-		for _, n := range res {
-			if n.ID() != t.Self().ID() && !alreadySeen(seen, n.ID()) {
-				nodes.push(wrapNode(n), findnodeResultLimit)
-				seen[n.ID()] = struct{}{} // 标记为已看到
-			}
-		}
-	}
+// 	for _, res := range results {
+// 		for _, n := range res {
+// 			if n.ID() != t.Self().ID() && !alreadySeen(seen, n.ID()) {
+// 				nodes.push(wrapNode(n), findnodeResultLimit)
+// 				seen[n.ID()] = struct{}{} // 标记为已看到
+// 			}
+// 		}
+// 	}
 
-	return unwrapNodes(nodes.entries), nil
-}
+// 	return unwrapNodes(nodes.entries), nil
+// }
 
-// alreadySeen 检查节点ID是否已经在seen map中
-func alreadySeen(seen map[enode.ID]struct{}, id enode.ID) bool {
-	_, exists := seen[id]
-	return exists
-}
+// // alreadySeen 检查节点ID是否已经在seen map中
+// func alreadySeen(seen map[enode.ID]struct{}, id enode.ID) bool {
+// 	_, exists := seen[id]
+// 	return exists
+// }
 
 // lookupDistances computes the distance parameter for FINDNODE calls to dest.
 // It chooses distances adjacent to logdist(target, dest), e.g. for a target
@@ -834,6 +837,7 @@ var (
 
 // handleWhoareyou resends the active call as a handshake packet.
 func (t *UDPv5) handleWhoareyou(p *v5wire.Whoareyou, fromID enode.ID, fromAddr *net.UDPAddr) {
+	fmt.Println("收到whoareyou消息:", fromID.GoString())
 	c, err := t.matchWithCall(fromID, p.Nonce)
 	if err != nil {
 		t.log.Debug("Invalid "+p.Name(), "addr", fromAddr, "err", err)
