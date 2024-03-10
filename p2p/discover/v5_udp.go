@@ -315,14 +315,12 @@ func (t *UDPv5) newRandomLookup(ctx context.Context) *lookup {
 
 func (t *UDPv5) newLookup(ctx context.Context, target enode.ID) *lookup {
 	return newLookup(ctx, t.tab, target, func(n *node) ([]*node, error) {
-		return t.LookupWorker(n)
+		return t.lookupWorker(n, target)
 	})
 }
 
 // lookupWorker performs FINDNODE calls against a single node during lookup.
-func (t *UDPv5) LookupWorker(destNode *node) ([]*node, error) {
-	target := destNode.ID()
-	fmt.Println("开始lookupworker:", destNode.Node.ID().String())
+func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 	var (
 		dists = lookupDistances(target, destNode.ID())
 		nodes = nodesByDistance{target: target}
@@ -330,9 +328,7 @@ func (t *UDPv5) LookupWorker(destNode *node) ([]*node, error) {
 	)
 	var r []*enode.Node
 	r, err = t.findnode(unwrapNode(destNode), dists)
-	fmt.Println("findnode回复节点个数", len(r))
 	if errors.Is(err, errClosed) {
-		fmt.Println("findnode出错:", err)
 		return nil, err
 	}
 	for _, n := range r {
@@ -342,35 +338,6 @@ func (t *UDPv5) LookupWorker(destNode *node) ([]*node, error) {
 	}
 	return nodes.entries, err
 }
-
-// func (t *UDPv5) newLookup(ctx context.Context, target enode.ID) *lookup {
-// 	return newLookup(ctx, t.tab, target, func(n *node) ([]*node, error) {
-// 		return t.LookupWorker(n, target)
-// 	})
-// }
-
-// // lookupWorker performs FINDNODE calls against a single node during lookup.
-// func (t *UDPv5) LookupWorker(destNode *node, target enode.ID) ([]*node, error) {
-// 	fmt.Println("开始lookupworker:", destNode.Node.ID().String())
-// 	var (
-// 		dists = lookupDistances(target, destNode.ID())
-// 		nodes = nodesByDistance{target: target}
-// 		err   error
-// 	)
-// 	var r []*enode.Node
-// 	r, err = t.findnode(unwrapNode(destNode), dists)
-// 	fmt.Println("findnode回复节点个数", len(r))
-// 	if errors.Is(err, errClosed) {
-// 		fmt.Println("findnode出错:", err)
-// 		return nil, err
-// 	}
-// 	for _, n := range r {
-// 		if n.ID() != t.Self().ID() {
-// 			nodes.push(wrapNode(n), findnodeResultLimit)
-// 		}
-// 	}
-// 	return nodes.entries, err
-// }
 
 // func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
 // 	var (
@@ -407,11 +374,39 @@ func (t *UDPv5) LookupWorker(destNode *node) ([]*node, error) {
 // 	return unwrapNodes(nodes.entries), nil
 // }
 
-// // alreadySeen 检查节点ID是否已经在seen map中
-// func alreadySeen(seen map[enode.ID]struct{}, id enode.ID) bool {
-// 	_, exists := seen[id]
-// 	return exists
-// }
+func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
+	fmt.Println("lookupworker开始:", tonode.ID().GoString())
+	target := tonode.ID()
+	nodes := nodesByDistance{target: target}
+	seen := make(map[enode.ID]struct{}) // 使用map来跟踪已经看到的节点ID
+
+	// 定义一个距离数组，只包含一个距离范围
+	distances := []uint{256} // 举例，选择256作为示例距离，实际值应根据需求确定
+
+	// 直接调用findnode，而不是在循环中调用
+	res, err := t.findnode(tonode, distances)
+	fmt.Println("findnode得到的节点个数:", len(res))
+	if err != nil {
+		fmt.Println("findnode出错:", err)
+		return nil, err
+	}
+
+	// 处理findnode的结果
+	for _, n := range res {
+		if n.ID() != t.Self().ID() && !alreadySeen(seen, n.ID()) {
+			nodes.push(wrapNode(n), findnodeResultLimit)
+			seen[n.ID()] = struct{}{} // 标记为已看到
+		}
+	}
+
+	return unwrapNodes(nodes.entries), nil
+}
+
+// alreadySeen 检查节点ID是否已经在seen map中
+func alreadySeen(seen map[enode.ID]struct{}, id enode.ID) bool {
+	_, exists := seen[id]
+	return exists
+}
 
 // lookupDistances computes the distance parameter for FINDNODE calls to dest.
 // It chooses distances adjacent to logdist(target, dest), e.g. for a target
