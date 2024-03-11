@@ -862,7 +862,7 @@ var (
 
 // handleWhoareyou resends the active call as a handshake packet.
 func (t *UDPv5) handleWhoareyou(p *v5wire.Whoareyou, fromID enode.ID, fromAddr *net.UDPAddr) {
-	fmt.Println("收到whoareyou消息:", fromID.GoString())
+	fmt.Println("收到whoareyou消息:", fromID.GoString(), fromAddr.IP.String())
 	c, err := t.matchWithCall(fromID, p.Nonce)
 	if err != nil {
 		t.log.Debug("Invalid "+p.Name(), "addr", fromAddr, "err", err)
@@ -871,10 +871,12 @@ func (t *UDPv5) handleWhoareyou(p *v5wire.Whoareyou, fromID enode.ID, fromAddr *
 
 	if c.node == nil {
 		// Can't perform handshake because we don't have the ENR.
+		fmt.Println("")
 		t.log.Debug("Can't handle "+p.Name(), "addr", fromAddr, "err", "call has no ENR")
 		c.err <- errors.New("remote wants handshake, but call has no ENR")
 		return
 	}
+	fmt.Println("<< 回复whoareyou消息:", c.node.ID())
 	// Resend the call that was answered by WHOAREYOU.
 	t.log.Trace("<< "+p.Name(), "id", c.node.ID(), "addr", fromAddr)
 	c.handshakeCount++
