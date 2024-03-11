@@ -352,7 +352,6 @@ func (t *UDPv5) LookupWorkerall(tonode *enode.Node) ([]*enode.Node, error) {
 		{246, 247, 248},
 		{249, 250, 251},
 		{252, 253, 254},
-		{255, 256, 256},
 	}
 
 	results := make([][]*enode.Node, len(distances))
