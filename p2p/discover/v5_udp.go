@@ -339,40 +339,41 @@ func (t *UDPv5) lookupWorker(destNode *node, target enode.ID) ([]*node, error) {
 	return nodes.entries, err
 }
 
-// func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
-// 	var (
-// 		target = tonode.ID()
-// 		nodes  = nodesByDistance{target: target}
-// 		seen   = make(map[enode.ID]struct{}) // 使用map来跟踪已经看到的节点ID
-// 		errs   [5]error                      // 存储错误的数组
-// 	)
-// 	distances := [][]uint{
-// 		{240, 241, 242},
-// 		{243, 244, 245},
-// 		{246, 247, 248},
-// 		{249, 250, 251},
-// 		{240, 241, 242},
-// 	}
+func (t *UDPv5) LookupWorkerall(tonode *enode.Node) ([]*enode.Node, error) {
+	var (
+		target = tonode.ID()
+		nodes  = nodesByDistance{target: target}
+		seen   = make(map[enode.ID]struct{}) // 使用map来跟踪已经看到的节点ID
+		errs   [5]error                      // 存储错误的数组
+	)
+	distances := [][]uint{
+		{240, 241, 242},
+		{243, 244, 245},
+		{246, 247, 248},
+		{249, 250, 251},
+		{252, 253, 254},
+		{255, 256, 256},
+	}
 
-// 	results := make([][]*enode.Node, len(distances))
-// 	for i, dist := range distances {
-// 		results[i], errs[i] = t.findnode(tonode, dist)
-// 		if errors.Is(errs[i], errClosed) {
-// 			return nil, errs[i]
-// 		}
-// 	}
+	results := make([][]*enode.Node, len(distances))
+	for i, dist := range distances {
+		results[i], errs[i] = t.findnode(tonode, dist)
+		if errors.Is(errs[i], errClosed) {
+			return nil, errs[i]
+		}
+	}
 
-// 	for _, res := range results {
-// 		for _, n := range res {
-// 			if n.ID() != t.Self().ID() && !alreadySeen(seen, n.ID()) {
-// 				nodes.push(wrapNode(n), findnodeResultLimit)
-// 				seen[n.ID()] = struct{}{} // 标记为已看到
-// 			}
-// 		}
-// 	}
+	for _, res := range results {
+		for _, n := range res {
+			if n.ID() != t.Self().ID() && !alreadySeen(seen, n.ID()) {
+				nodes.push(wrapNode(n), findnodeResultLimit)
+				seen[n.ID()] = struct{}{} // 标记为已看到
+			}
+		}
+	}
 
-// 	return unwrapNodes(nodes.entries), nil
-// }
+	return unwrapNodes(nodes.entries), nil
+}
 
 func (t *UDPv5) LookupWorker(tonode *enode.Node) ([]*enode.Node, error) {
 	fmt.Println("lookupworker开始:", tonode.ID().GoString())
