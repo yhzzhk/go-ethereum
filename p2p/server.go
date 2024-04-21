@@ -31,6 +31,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	geoip2 "github.com/oschwald/geoip2-golang"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/mclock"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -731,6 +733,20 @@ func (srv *Server) run() {
 		trusted[n.ID()] = true
 	}
 
+	// 打开GeoIP2数据库
+	db, err := geoip2.Open("GeoLite2-City.mmdb")
+	if err != nil {
+		fmt.Println("Error opening GeoLite2 database: ", err)
+	}
+	defer db.Close()
+
+	// 打开GeoIP2 ASN数据库
+	dbASN, err := geoip2.Open("GeoLite2-ASN.mmdb")
+	if err != nil {
+		fmt.Println("Error opening GeoLite2 ASN database: ", err)
+	}
+	defer dbASN.Close()
+
 running:
 	for {
 		select {
@@ -795,6 +811,32 @@ running:
 					isReachable = true
 				}
 
+				// 解析IP地址以获取地理位置信息
+				ip := net.ParseIP(c.node.IP().String())
+				city, err := db.City(ip)
+				if err != nil {
+					fmt.Printf("Failed to get geo-location for IP %s: %v", ip, err)
+				}
+
+				asn, err := dbASN.ASN(ip)
+				if err != nil {
+					fmt.Printf("Failed to get ASN for IP %s: %v", ip, err)
+				}
+
+				// 提取城市和国家信息
+				var city_name, country_name, asn_description string
+				var asn_number uint
+				if city.City.Names["en"] != "" {
+					city_name = city.City.Names["en"]
+				}
+				if city.Country.Names["en"] != "" {
+					country_name = city.Country.Names["en"]
+				}
+				if asn != nil {
+					asn_number = asn.AutonomousSystemNumber
+					asn_description = asn.AutonomousSystemOrganization
+				}
+
 				// 创建 cqlconnection 实例
 				ctx := context.Background()
 				conn := neo4j.NewCQLConnection(ctx)
@@ -814,6 +856,10 @@ running:
 					"is_inbound":   isInbound,
 					"services":     services,
 					"is_reachable": isReachable,
+					"city":         city_name,
+					"country":      country_name,
+					"asn":          asn_number,
+					"asn_org":      asn_description,
 				}
 
 				// 添加或更新节点信息

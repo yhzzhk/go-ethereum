@@ -115,6 +115,7 @@ func (p *Peer) readStatus(network uint64, status *StatusPacket, genesis common.H
 		return fmt.Errorf("%w: %x (!= %x)", errGenesisMismatch, status.Genesis, genesis)
 	}
 	if err := forkFilter(status.ForkID); err != nil {
+		fmt.Println("forkid匹配")
 		return fmt.Errorf("%w: %v", errForkIDRejected, err)
 	}
 	return nil

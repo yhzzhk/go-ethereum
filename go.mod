@@ -124,6 +124,8 @@ require (
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.16.0 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
+	github.com/oschwald/geoip2-golang v1.9.0 // indirect
+	github.com/oschwald/maxminddb-golang v1.11.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.12.0 // indirect

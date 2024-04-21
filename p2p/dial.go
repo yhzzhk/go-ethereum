@@ -175,16 +175,15 @@ func newDialScheduler(config dialConfig, it enode.Iterator, setupFunc dialSetupF
 		extendedNodeStorage: extStorage,
 		addExtendedCh:       make(chan *enode.Node),
 
-		dialing:      make(map[enode.ID]*dialTask),
-		static:       make(map[enode.ID]*dialTask),
-		peers:        make(map[enode.ID]struct{}),
-		doneCh:       make(chan *dialTask),
-		nodesIn:      make(chan *enode.Node),
-		addStaticCh:  make(chan *enode.Node),
-		remStaticCh:  make(chan *enode.Node),
-		addPeerCh:    make(chan *conn),
-		remPeerCh:    make(chan *conn),
-		
+		dialing:     make(map[enode.ID]*dialTask),
+		static:      make(map[enode.ID]*dialTask),
+		peers:       make(map[enode.ID]struct{}),
+		doneCh:      make(chan *dialTask),
+		nodesIn:     make(chan *enode.Node),
+		addStaticCh: make(chan *enode.Node),
+		remStaticCh: make(chan *enode.Node),
+		addPeerCh:   make(chan *conn),
+		remPeerCh:   make(chan *conn),
 	}
 	d.lastStatsLog = d.clock.Now()
 	d.ctx, d.cancel = context.WithCancel(context.Background())
@@ -529,11 +528,11 @@ func (t *dialTask) run(d *dialScheduler) {
 			}
 		}
 		// 如果失败，且节点位于extendednodestorage中，且是eth节点，则在score里扣分。
-		if nodeInfo != nil && nodeInfo.Handshaked{
+		if nodeInfo != nil {
 			d.extendedNodeStorage.UpdateNodeScore(t.dest, -1)
 			fmt.Println("已eth节点dial失败:", t.dest.ID().String())
 		}
-	}else {
+	} else {
 		//如果成功，且节点位于extendednodestorage中，且是eth节点，则在neo4j中更新last_time信息
 		if nodeInfo != nil && nodeInfo.Handshaked {
 			fmt.Println("已eth节点dial成功, 更新lastime信息:", t.dest.ID().String())
@@ -546,7 +545,7 @@ func (t *dialTask) run(d *dialScheduler) {
 			re, err := conn.UpsertNode(ctx, nodeid, properties)
 			if err != nil {
 				fmt.Println("已eth节点更新lastime信息失败:", err)
-			}else{
+			} else {
 				fmt.Println("已eth节点更新lastime信息:", re)
 			}
 		}
